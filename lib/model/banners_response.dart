@@ -16,9 +16,9 @@ class BannersResponse {
   });
 
   factory BannersResponse.fromJson(Map<String, dynamic> json) => BannersResponse(
-    status: json["status"],
+    status: json["status"] ?? 0,
     data: List<Datum>.from(json["data"].map((x) => Datum.fromJson(x))),
-    message: json["message"],
+    message: json["message"] ?? "",
   );
 
   Map<String, dynamic> toJson() => {
@@ -48,13 +48,13 @@ class Datum {
   });
 
   factory Datum.fromJson(Map<String, dynamic> json) => Datum(
-    id: json["id"],
-    title: json["title"],
-    bannerImageWeb: json["banner_image_web"],
-    bannerImageApp: json["banner_image_app"],
+    id: json["id"] ?? 0,
+    title: json["title"] ?? "",
+    bannerImageWeb: json["banner_image_web"] ?? "",
+    bannerImageApp: json["banner_image_app"] ?? "",
     startAt: DateTime.parse(json["start_at"]),
     endAt: DateTime.parse(json["end_at"]),
-    isActive: json["is_active"],
+    isActive: json["is_active"] ?? 0,
   );
 
   Map<String, dynamic> toJson() => {

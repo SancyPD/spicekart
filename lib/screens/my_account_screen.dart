@@ -1,10 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../utils/app_theme.dart';
+import '../controllers/main_controller.dart';
 import '../services/api_service.dart';
 import 'login_screen.dart';
 import 'wishlist_screen.dart';
 import 'order_history_screen.dart';
+import 'package:get/get.dart';
+import 'subscription_screen.dart';
+import 'active_subscription_screen.dart';
+import 'personal_info_screen.dart';
+import 'terms_conditions_screen.dart';
+import 'privacy_policy_screen.dart';
+import 'preference_screen.dart';
+import 'payment_method_screen.dart';
+import '../model/profile_response.dart' as pr;
+import 'package:shared_preferences/shared_preferences.dart';
 
 class MyAccountScreen extends StatefulWidget {
   const MyAccountScreen({super.key});
@@ -15,55 +26,140 @@ class MyAccountScreen extends StatefulWidget {
 
 class _MyAccountScreenState extends State<MyAccountScreen> {
   bool _isLoggedIn = false; // Change to true when user logs in
+  pr.Data? _userProfile;
+  String? _cachedFirstName;
+  String? _cachedEmail;
 
   @override
   void initState() {
     super.initState();
     _isLoggedIn = ApiService.accessToken != null;
-    SystemChrome.setSystemUIOverlayStyle(
-      const SystemUiOverlayStyle(
-        statusBarColor: Colors.white,
-        statusBarIconBrightness: Brightness.dark,
-        statusBarBrightness: Brightness.light,
-      ),
-    );
+    if (_isLoggedIn) {
+      _loadCachedProfile();
+      _fetchProfile();
+    }
+  }
+
+  Future<void> _loadCachedProfile() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _cachedFirstName = prefs.getString('user_first_name');
+        _cachedEmail = prefs.getString('user_email');
+      });
+    }
+  }
+
+  Future<void> _fetchProfile() async {
+    final profile = await ApiService.getProfile();
+    if (mounted) {
+      setState(() {
+        _userProfile = profile?.data;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.grey.shade100,
-      body: SafeArea(
-        child: Column(
-          children: [
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: const SystemUiOverlayStyle(
+        statusBarColor: Colors.white,
+        statusBarIconBrightness: Brightness.dark,
+        statusBarBrightness: Brightness.light,
+      ),
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        body: SafeArea(
+          child: Column(
+            children: [
             // Header Section
             Container(
+              width: double.infinity,
               padding: const EdgeInsets.all(16),
               color: Colors.white,
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  style: TextButton.styleFrom(
-                    padding: EdgeInsets.zero,
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: GestureDetector(
+                          onTap: () => Navigator.pop(context),
+                          behavior: HitTestBehavior.opaque,
+                          child: const Padding(
+                            padding: EdgeInsets.only(top: 8, bottom: 8, right: 20),
+                            child: Text(
+                              'Back',
+                              style: TextStyle(
+                                color: Color(0xFF4D555C),
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      // const Text(
+                      //   'Profile',
+                      //   style: TextStyle(
+                      //     color: Color(0xFF4D555C),
+                      //     fontSize: 18,
+                      //     fontFamily: 'ITC Avant Garde Gothic Pro',
+                      //     fontWeight: FontWeight.w600,
+                      //   ),
+                      // ),
+                      if (_isLoggedIn)
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: GestureDetector(
+                            onTap: _showLogoutDialog,
+                            behavior: HitTestBehavior.opaque,
+                            child: Padding(
+                              padding: const EdgeInsets.only(top: 8, bottom: 8, right: 16),
+                              child: Image.asset(
+                                'assets/images/logout.png',
+                                height: 20,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
-                  child: const Text(
-                    'Back',
-                    style: TextStyle(
-                      color: Color(0xFF4D555C),
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
+                  if (_isLoggedIn && (_userProfile != null || _cachedFirstName != null)) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'Hi ${_userProfile?.firstName ?? _cachedFirstName}',
+                      style: const TextStyle(
+                        color: Color(0xFF171717),
+                        fontSize: 20,
+                        fontFamily: 'ITC Avant Garde Gothic Pro',
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
-                  ),
-                ),
+                    if ((_userProfile?.email ?? _cachedEmail ?? '').isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        _userProfile?.email ?? _cachedEmail!,
+                        style: const TextStyle(
+                          color: Color(0xFF4D555C),
+                          fontSize: 12,
+                          fontFamily: 'ITC Avant Garde Gothic Pro',
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ],
+                ],
               ),
             ),
             // Content
             Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
+              child: Container(
+                color: Colors.grey.shade100,
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
                 child: Column(
                   children: [
                     if (!_isLoggedIn) _buildBeforeLoginCard(),
@@ -73,24 +169,28 @@ class _MyAccountScreenState extends State<MyAccountScreen> {
                     ],
                     if (!_isLoggedIn) const SizedBox(height: 16),
                     _buildMenuCard(),
-                    if (_isLoggedIn) ...[
-                      const SizedBox(height: 10),
-                      _buildLogOutButton(),
-                    ],
-                    const SizedBox(height: 20),
                   ],
                 ),
               ),
             ),
-            const SizedBox(height: 16),
+          ),
+          Container(color: Colors.grey.shade100, height: 16),
             // Footer at bottom
-            _buildFooter(),
-            const SizedBox(height: 16),
+            Container(
+              color: Colors.grey.shade100,
+              child: Column(
+                children: [
+                  _buildFooter(),
+                  const SizedBox(height: 16),
+                ],
+              ),
+            ),
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildBeforeLoginCard() {
     return Container(
@@ -103,38 +203,46 @@ class _MyAccountScreenState extends State<MyAccountScreen> {
       child: Column(
         children: [
           // Profile Icon
-          Container(
-            width: 80,
-            height: 80,
-            decoration: BoxDecoration(
-              color: AppTheme.instance.mutedBlue,
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 2),
-            ),
-            child: const Icon(
-              Icons.person_outline,
-              color: Colors.white,
-              size: 40,
+          GestureDetector(
+            onTap: () {
+              Get.offAll(() => const LoginScreen());
+            },
+            child: Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: AppTheme.instance.mutedColor,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2),
+              ),
+              child: const Icon(
+                Icons.person_outline,
+                color: Colors.white,
+                size: 40,
+              ),
             ),
           ),
           const SizedBox(height: 16),
           // Login / Sign up Text
-          const Text(
-            'Login / Sign up',
-            style: TextStyle(
-              color: Color(0xFF4D555C),
-              fontSize: 18,
-              fontFamily: 'ITC Avant Garde Gothic Pro',
-              fontWeight: FontWeight.w600,
+          GestureDetector(
+            onTap: () {
+              Get.offAll(() => const LoginScreen());
+            },
+            child: const Text(
+              'Login / Sign up',
+              style: TextStyle(
+                color: Color(0xFF4D555C),
+                fontSize: 18,
+                fontFamily: 'ITC Avant Garde Gothic Pro',
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
           const SizedBox(height: 8),
           // Sign up Text
           GestureDetector(
             onTap: () {
-              setState(() {
-                _isLoggedIn = true;
-              });
+              Get.offAll(() => const LoginScreen());
             },
             child: const Text(
               'Don\'t have an Account? Sign up',
@@ -203,7 +311,7 @@ class _MyAccountScreenState extends State<MyAccountScreen> {
               width: 50,
               height: 50,
               decoration: BoxDecoration(
-                color: AppTheme.instance.mutedBlue,
+                color: AppTheme.instance.mutedColor,
                 shape: BoxShape.circle,
               ),
               child: Icon(
@@ -249,49 +357,75 @@ class _MyAccountScreenState extends State<MyAccountScreen> {
                   icon: Icons.payment_outlined,
                   title: 'Payment',
                   onTap: () {
-                    // Navigate to Payment
+                    Get.to(() => const PaymentMethodScreen());
                   },
                 ),
+                /*
                 _buildMenuItemWithIcon(
                   icon: Icons.subscriptions_outlined,
                   title: 'Subscription',
-                  onTap: () {
-                    // Navigate to Subscription
+                  onTap: () async {
+                    // Show loading dialog
+                    Get.dialog(
+                      const Center(child: CircularProgressIndicator()),
+                      barrierDismissible: false,
+                    );
+
+                    // Call API
+                    final response = await ApiService.checkActiveSubscription();
+
+                    // Hide loading dialog
+                    if (Get.isDialogOpen ?? false) {
+                      Get.back();
+                    }
+
+                    if (response['data'] == null) {
+                      // No active subscription, show plans
+                      Get.to(() => const SubscriptionScreen(isFromMyAccount: true));
+                    } else {
+                      // Active subscription found, show details screen
+                      Get.to(() => ActiveSubscriptionScreen(
+                        subscriptionData: response['data'],
+                      ));
+                    }
                   },
                 ),
+                */
                 _buildMenuItemWithIcon(
                   icon: Icons.person_outline,
                   title: 'Personal info',
-                  onTap: () {
-                    // Navigate to Personal info
+                  onTap: () async {
+                    await Get.to(() => const PersonalInfoScreen());
+                    _loadCachedProfile();
+                    _fetchProfile();
                   },
                 ),
                 _buildMenuItemWithIcon(
                   icon: Icons.sync_outlined,
                   title: 'Preferences',
                   onTap: () {
-                    // Navigate to Preferences
+                    Get.to(() => const PreferenceScreen());
                   },
                 ),
-                _buildMenuItemWithIcon(
+                /*_buildMenuItemWithIcon(
                   icon: Icons.settings_outlined,
                   title: 'Settings',
                   onTap: () {
                     // Navigate to Settings
                   },
-                ),
+                ),*/
                 _buildMenuItem(
                   assetPath: 'assets/images/terms.png',
                   title: 'Terms & Conditions',
                   onTap: () {
-                    // Navigate to Terms & Conditions
+                    Get.to(() => const TermsConditionsScreen());
                   },
                 ),
                 _buildMenuItem(
                   assetPath: 'assets/images/privacy.png',
                   title: 'Privacy policy',
                   onTap: () {
-                    // Navigate to Privacy policy
+                    Get.to(() => const PrivacyPolicyScreen());
                   },
                 ),
               ]
@@ -307,14 +441,14 @@ class _MyAccountScreenState extends State<MyAccountScreen> {
                   assetPath: 'assets/images/terms.png',
                   title: 'Terms & Conditions',
                   onTap: () {
-                    // Navigate to Terms & Conditions
+                    Get.to(() => const TermsConditionsScreen());
                   },
                 ),
                 _buildMenuItem(
                   assetPath: 'assets/images/privacy.png',
                   title: 'Privacy policy',
                   onTap: () {
-                    // Navigate to Privacy policy
+                    Get.to(() => const PrivacyPolicyScreen());
                   },
                 ),
               ],
@@ -423,61 +557,43 @@ class _MyAccountScreenState extends State<MyAccountScreen> {
       setState(() {
         _isLoggedIn = false;
       });
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (context) => const LoginScreen()),
-        (route) => false,
-      );
+      Get.offAll(() => const LoginScreen());
     }
-  }
-
-  Widget _buildLogOutButton() {
-    return InkWell(
-      onTap: _showLogoutDialog,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              'Log Out',
-              style: TextStyle(
-                color: AppTheme.instance.mutedBlue,
-                fontSize: 16,
-                fontFamily: 'ITC Avant Garde Gothic Pro',
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Icon(
-              Icons.arrow_forward,
-              color: AppTheme.instance.mutedBlue,
-              size: 20,
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   Widget _buildFooter() {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        // Logo with Chili Pepper
-        Image.asset(
-          'assets/images/logo_horizontal.png',
-          fit: BoxFit.contain,
-          height: _isLoggedIn ? 45: 68,
+        GestureDetector(
+          onTap: () {
+            if (Get.isRegistered<MainController>()) {
+              MainController.to.changeTab(0);
+            }
+            Get.back(); // Pop MyAccountScreen
+            // If there's more than one screen on the stack, pop until first
+            Get.until((route) => route.isFirst);
+          },
+          child: Center(
+            child: Image.asset(
+              'assets/images/logo_horizontal.png',
+              fit: BoxFit.contain,
+              height: 45,
+            ),
+          ),
         ),
         const SizedBox(height: 8),
         // Version
-        const Text(
-          'Version 1.0',
-          style: TextStyle(
-            color:  Color(0xFF4D555C),
-            fontSize: 14,
-            fontFamily: 'ITC Avant Garde Gothic Pro',
-            fontWeight: FontWeight.w500,
+        Center(
+          child: const Text(
+            'Version 1.0',
+            style: TextStyle(
+              color:  Color(0xFF4D555C),
+              fontSize: 14,
+              fontFamily: 'ITC Avant Garde Gothic Pro',
+              fontWeight: FontWeight.w500,
+            ),
           ),
         ),
       ],

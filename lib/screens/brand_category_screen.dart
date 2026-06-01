@@ -1,28 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:get/get.dart';
+import 'package:spicekart/services/api_service.dart';
 import '../utils/app_theme.dart';
+import '../controllers/brand_category_controller.dart';
 import 'product_detail_screen.dart';
+import 'cart_screen.dart';
 
-class BrandCategoryScreen extends StatefulWidget {
+class BrandCategoryScreen extends StatelessWidget {
   final String categoryName;
   
-  const BrandCategoryScreen({
+  BrandCategoryScreen({
     super.key,
     this.categoryName = 'Biscuits',
-  });
-
-  @override
-  State<BrandCategoryScreen> createState() => _BrandCategoryScreenState();
-}
-
-class _BrandCategoryScreenState extends State<BrandCategoryScreen> {
-  String? _selectedBrand;
-  final TextEditingController _searchController = TextEditingController();
-
-  @override
-  void initState() {
-    super.initState();
-    _selectedBrand = 'BRITANNIA'; // Default selected brand
+  }) {
     // Set system status bar style
     SystemChrome.setSystemUIOverlayStyle(
       const SystemUiOverlayStyle(
@@ -33,11 +24,7 @@ class _BrandCategoryScreenState extends State<BrandCategoryScreen> {
     );
   }
 
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
+  final BrandCategoryController controller = Get.put(BrandCategoryController());
 
   @override
   Widget build(BuildContext context) {
@@ -85,7 +72,7 @@ class _BrandCategoryScreenState extends State<BrandCategoryScreen> {
                       ),
                     ),
                     child: TextField(
-                      controller: _searchController,
+                      controller: controller.searchController,
                       decoration: InputDecoration(
                         hintText: 'Search for...',
                         hintStyle: TextStyle(
@@ -122,7 +109,7 @@ class _BrandCategoryScreenState extends State<BrandCategoryScreen> {
                 children: [
                   // Category Title
                   Text(
-                    widget.categoryName,
+                    categoryName,
                     style: TextStyle(
                       color: const Color(0xFF364238),
                       fontSize: 14,
@@ -138,9 +125,9 @@ class _BrandCategoryScreenState extends State<BrandCategoryScreen> {
                     child: ListView(
                       scrollDirection: Axis.horizontal,
                       children: [
-                        _buildBrandLogo('BRITANNIA', 'assets/images/britannia.png'),
+                        _buildBrandLogo('Britannia', 'assets/images/britannia.png'),
                         const SizedBox(width: 12),
-                        _buildBrandLogo('pepsi', 'assets/images/pepsi.png'),
+                        _buildBrandLogo('Pepsi', 'assets/images/pepsi.png'),
                         const SizedBox(width: 12),
                         _buildBrandLogo('Eastern', 'assets/images/eastern.png'),
                         const SizedBox(width: 12),
@@ -179,37 +166,37 @@ class _BrandCategoryScreenState extends State<BrandCategoryScreen> {
   }
 
   Widget _buildBrandLogo(String brandName, String imageAsset) {
-    final isSelected = _selectedBrand == brandName;
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          _selectedBrand = brandName;
-        });
-      },
-      child: Container(
-        width: 87,
-        height: 55,
-        decoration: ShapeDecoration(
-          color: Colors.white,
-          shape: RoundedRectangleBorder(
-            side: BorderSide(
-              width: 1,
-              color: isSelected
-                  ? const Color(0xFF34B355):Color(0x677E6A3D),
+    return Obx(() {
+      final isSelected = controller.selectedBrand.value == brandName;
+      return GestureDetector(
+        onTap: () {
+          controller.selectBrand(brandName);
+        },
+        child: Container(
+          width: 87,
+          height: 55,
+          decoration: ShapeDecoration(
+            color: Colors.white,
+            shape: RoundedRectangleBorder(
+              side: BorderSide(
+                width: 1,
+                color: isSelected
+                    ? const Color(0xFF34B355):Color(0x677E6A3D),
+              ),
+              borderRadius: BorderRadius.circular(5),
             ),
-            borderRadius: BorderRadius.circular(5),
+          ),
+          child: Center(
+            child: Image.asset(
+              imageAsset,
+              width: 50,
+              height: 50,
+              fit: BoxFit.contain,
+            ),
           ),
         ),
-        child: Center(
-          child: Image.asset(
-            imageAsset,
-            width: 50,
-            height: 50,
-            fit: BoxFit.contain,
-          ),
-        ),
-      ),
-    );
+      );
+    });
   }
 
   Widget _buildProductCard(int index) {
@@ -269,14 +256,9 @@ class _BrandCategoryScreenState extends State<BrandCategoryScreen> {
 
     return GestureDetector(
       onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ProductDetailScreen(
-              productId: product['id'] as int,
-            ),
-          ),
-        );
+        Get.to(() => ProductDetailScreen(
+          productId: product['id'] as int,
+        ));
       },
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -293,7 +275,7 @@ class _BrandCategoryScreenState extends State<BrandCategoryScreen> {
                 height: double.infinity,
                 padding: EdgeInsets.all(10.0),
                 decoration:  ShapeDecoration(
-                  color: AppTheme.instance.lightBlueBg,
+                  color: AppTheme.instance.backgroundColor,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.all(Radius.circular(2)),
                   ),
@@ -333,24 +315,76 @@ class _BrandCategoryScreenState extends State<BrandCategoryScreen> {
             Positioned(
               bottom: -4,
               right: -4,
-              child: Container(
-                width: 24,
-                height: 24,
-                decoration: ShapeDecoration(
-                  color: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    side: BorderSide(
-                      width: 1,
-                      color: AppTheme.instance.secondaryLightBlue,
+              child: GestureDetector(
+                onTap: () async {
+                  final productId = product['id'] as int;
+                  
+                  HapticFeedback.lightImpact();
+                  controller.addingProductIds.add(productId);
+
+                  final success = await ApiService.addProductToCart(
+                    productId: productId,
+                    variantId: 1, // Defaulting to 1 for dummy products
+                    quantity: 1,
+                  );
+                  
+                  controller.addingProductIds.remove(productId);
+
+                  if (success) {
+                    Get.closeCurrentSnackbar();
+                    Get.snackbar(
+                      'Success',
+                      '${product['name']} added to cart',
+                      snackPosition: SnackPosition.BOTTOM,
+                      duration: const Duration(seconds: 5),
+                      mainButton: TextButton(
+                        onPressed: () => Get.to(() => const CartScreen()),
+                        child: const Text(
+                          'View Cart',
+                          style: TextStyle(color: Colors.blue),
+                        ),
+                      ),
+                    );
+
+                  } else {
+                    Get.snackbar(
+                      'Error',
+                      'Failed to add to cart',
+                      snackPosition: SnackPosition.BOTTOM,
+                      duration: const Duration(seconds: 5),
+                    );
+                  }
+                },
+                child: Obx(() {
+                  final isAdding = controller.addingProductIds.contains(product['id'] as int);
+                  return Container(
+                    width: 24,
+                    height: 24,
+                    decoration: ShapeDecoration(
+                      color: isAdding ? AppTheme.instance.secondaryColor : Colors.white,
+                      shape: RoundedRectangleBorder(
+                        side: BorderSide(
+                          width: 1,
+                          color: AppTheme.instance.secondaryColor,
+                        ),
+                        borderRadius: BorderRadius.circular(3),
+                      ),
                     ),
-                    borderRadius: BorderRadius.circular(3),
-                  ),
-                ),
-                child: Icon(
-                  Icons.add,
-                  color: AppTheme.instance.secondaryLightBlue,
-                  size: 16,
-                ),
+                    child: isAdding
+                        ? const Padding(
+                            padding: EdgeInsets.all(4.0),
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : Icon(
+                            Icons.add,
+                            color: AppTheme.instance.secondaryColor,
+                            size: 16,
+                          ),
+                  );
+                }),
               ),
             ),
             ],
@@ -388,7 +422,7 @@ class _BrandCategoryScreenState extends State<BrandCategoryScreen> {
             Text(
               product['weight'] as String,
               style: TextStyle(
-                color: AppTheme.instance.secondaryLightBlue,
+                color: AppTheme.instance.secondaryColor,
                 fontSize: 11,
                 fontFamily: 'ITC Avant Garde Gothic Pro',
                 fontWeight: FontWeight.w500,
@@ -397,7 +431,7 @@ class _BrandCategoryScreenState extends State<BrandCategoryScreen> {
             Icon(
               Icons.arrow_drop_down,
               size: 12,
-              color: AppTheme.instance.secondaryLightBlue,
+              color: AppTheme.instance.secondaryColor,
             ),
           ],
         ),

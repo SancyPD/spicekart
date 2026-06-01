@@ -1,5 +1,6 @@
 
 import 'dart:convert';
+import '../utils/string_extensions.dart';
 
 ProductsListResponse productsListResponseFromJson(String str) => ProductsListResponse.fromJson(json.decode(str));
 
@@ -8,24 +9,56 @@ String productsListResponseToJson(ProductsListResponse data) => json.encode(data
 class ProductsListResponse {
   int status;
   List<Datum> data;
+  Meta? meta;
   String message;
 
   ProductsListResponse({
     required this.status,
     required this.data,
+    this.meta,
     required this.message,
   });
 
   factory ProductsListResponse.fromJson(Map<String, dynamic> json) => ProductsListResponse(
-    status: json["status"],
+    status: json["status"] ?? 0,
     data: List<Datum>.from(json["data"].map((x) => Datum.fromJson(x))),
-    message: json["message"],
+    meta: json["meta"] != null ? Meta.fromJson(json["meta"]) : null,
+    message: json["message"] ?? "",
   );
 
   Map<String, dynamic> toJson() => {
     "status": status,
     "data": List<dynamic>.from(data.map((x) => x.toJson())),
+    "meta": meta?.toJson(),
     "message": message,
+  };
+}
+
+class Meta {
+  int currentPage;
+  int perPage;
+  int total;
+  int lastPage;
+
+  Meta({
+    required this.currentPage,
+    required this.perPage,
+    required this.total,
+    required this.lastPage,
+  });
+
+  factory Meta.fromJson(Map<String, dynamic> json) => Meta(
+    currentPage: json["current_page"] ?? 1,
+    perPage: json["per_page"] ?? 20,
+    total: json["total"] ?? 0,
+    lastPage: json["last_page"] ?? 1,
+  );
+
+  Map<String, dynamic> toJson() => {
+    "current_page": currentPage,
+    "per_page": perPage,
+    "total": total,
+    "last_page": lastPage,
   };
 }
 
@@ -71,21 +104,21 @@ class Datum {
   });
 
   factory Datum.fromJson(Map<String, dynamic> json) => Datum(
-    id: json["id"],
-    slug: json["slug"],
-    productName: json["product_name"],
+    id: json["id"] ?? 0,
+    slug: json["slug"] ?? "",
+    productName: json["product_name"] as String? ?? "",
     productDescription: json["product_description"]??"",
     productBarcode: json["product_barcode"]??"",
-    categoryId: json["category_id"],
-    categoryName: json["category_name"],
-    brandId: json["brand_id"],
-    brandName: json["brand_name"],
+    categoryId: json["category_id"] ?? 0,
+    categoryName: json["category_name"] ?? "",
+    brandId: json["brand_id"] ?? 0,
+    brandName: (json["brand_name"] as String? ?? "").toSentenceCase(),
     productImage: json["product_image"]??"",
     metaTitle: json["meta_title"],
     metaDescription: json["meta_description"],
     metaKeywords: json["meta_keywords"],
-    productTax: json["product_tax"],
-    productStatus: json["product_status"],
+    productTax: json["product_tax"] ?? "",
+    productStatus: json["product_status"] ?? "",
     variants: List<Variant>.from(json["variants"].map((x) => Variant.fromJson(x))),
     regions: List<RegionElement>.from(json["regions"].map((x) => RegionElement.fromJson(x))),
     ratings: List<Rating>.from(json["ratings"].map((x) => Rating.fromJson(x))),
@@ -127,10 +160,10 @@ class Rating {
   });
 
   factory Rating.fromJson(Map<String, dynamic> json) => Rating(
-    ratingId: json["rating_id"],
+    ratingId: json["rating_id"] ?? 0,
     user: json["user"]??"",
-    rating: json["rating"],
-    reviewText: json["review_text"],
+    rating: json["rating"] ?? 0,
+    reviewText: json["review_text"] ?? "",
   );
 
   Map<String, dynamic> toJson() => {
@@ -155,9 +188,9 @@ class RegionElement {
   });
 
   factory RegionElement.fromJson(Map<String, dynamic> json) => RegionElement(
-    id: json["id"],
-    productId: json["product_id"],
-    regionId: json["region_id"],
+    id: json["id"] ?? 0,
+    productId: json["product_id"] ?? 0,
+    regionId: json["region_id"] ?? 0,
     region: RegionRegion.fromJson(json["region"]),
   );
 
@@ -183,10 +216,10 @@ class RegionRegion {
   });
 
   factory RegionRegion.fromJson(Map<String, dynamic> json) => RegionRegion(
-    id: json["id"],
-    title: json["title"],
-    regionImage: json["region_image"],
-    isActive: json["is_active"],
+    id: json["id"] ?? 0,
+    title: json["title"] ?? "",
+    regionImage: json["region_image"] ?? "",
+    isActive: json["is_active"] ?? 0,
   );
 
   Map<String, dynamic> toJson() => {
@@ -213,10 +246,10 @@ class Variant {
   });
 
   factory Variant.fromJson(Map<String, dynamic> json) => Variant(
-    id: json["id"],
-    productId: json["product_id"],
-    varientSize: json["varient_size"],
-    productPrice: json["product_price"],
+    id: json["id"] ?? 0,
+    productId: json["product_id"] ?? 0,
+    varientSize: json["varient_size"] ?? "",
+    productPrice: json["product_price"] ?? "",
     storePrice: json["store_price"],
   );
 

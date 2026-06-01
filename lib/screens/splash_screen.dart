@@ -1,10 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:get/get.dart';
 import 'package:spicekart/screens/subscription_screen.dart';
 import 'login_screen.dart';
 import 'region_selection_screen.dart';
-import 'home_screen.dart';
+import 'main_screen.dart';
 import '../services/api_service.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -43,44 +44,35 @@ class _SplashScreenState extends State<SplashScreen> {
             // Navigate to login screen after animation completes
             Future.delayed(const Duration(milliseconds: 500), () async {
               if (mounted) {
-                // Check if user is already logged in
-                await ApiService.loadToken();
-                if (ApiService.accessToken != null &&
-                    ApiService.accessToken!.isNotEmpty) {
-                  if (ApiService.selectedRegion != null &&
-                      ApiService.selectedRegion!.isNotEmpty) {
-                    print('User logged in with region ${ApiService.selectedRegion}, navigating to HomeScreen');
-                    if (mounted) {
-                      Navigator.pushReplacement(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => HomeScreen(
-                            selectedRegion: ApiService.selectedRegion!,
-                          ),
-                        ),
-                      );
-
-                    }
-                  } else {
-                    print('User logged in but no region selected, navigating to RegionSelectionScreen');
-                    if (mounted) {
-                      Navigator.pushReplacement(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const RegionSelectionScreen(),
-                        ),
-                      );
-                    }
-                  }
-                } else {
-                  print('User not logged in, navigating to LoginScreen');
+                // Check if user is already logged in (tokens already loaded in main.dart)
+                if (ApiService.selectedRegion != null &&
+                    ApiService.selectedRegion!.isNotEmpty) {
+                  print('Region already selected (${ApiService.selectedRegion}), navigating to MainScreen');
                   if (mounted) {
                     Navigator.pushReplacement(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => const LoginScreen(),
+                        builder: (context) => MainScreen(
+                          initialRegion: ApiService.selectedRegion!,
+                        ),
                       ),
                     );
+                  }
+                } else if (ApiService.accessToken != null &&
+                    ApiService.accessToken!.isNotEmpty) {
+                  print('User logged in but no region selected, navigating to RegionSelectionScreen');
+                  if (mounted) {
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const RegionSelectionScreen(fromHome: false,),
+                      ),
+                    );
+                  }
+                } else {
+                  print('No token, no region, navigating to LoginScreen');
+                  if (mounted) {
+                    Get.offAll(() => const LoginScreen());
                   }
                 }
               }
@@ -172,13 +164,13 @@ class _SplashScreenState extends State<SplashScreen> {
             child: Image.asset(
               'assets/images/splash_bottom_img.png',
               fit: BoxFit.contain,
-              height: 240,
+              height: 200,
             ),
           ),
           Positioned(
             left: 0,
             right: 200,
-            bottom: 190,
+            bottom: 200,
             child: Image.asset(
               'assets/images/red_chilli.png',
               fit: BoxFit.contain,
@@ -188,7 +180,7 @@ class _SplashScreenState extends State<SplashScreen> {
           Positioned(
             left: 0,
             right: 180,
-            bottom: 187,
+            bottom: 197,
             child: Image.asset(
               'assets/images/green_chilli.png',
               fit: BoxFit.contain,

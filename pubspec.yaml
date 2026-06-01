@@ -37,7 +37,14 @@ dependencies:
   http: ^1.6.0
   flutter_secure_storage: ^9.2.4
   flutter_stripe: ^11.1.0
-  flutter_timezone: ^5.0.2
+  flutter_timezone: 4.0.0
+#  flutter_timezone: ^5.0.2
+  get: ^4.7.3
+  google_sign_in: ^6.2.1
+  sign_in_with_apple: ^7.0.1
+  cached_network_image: ^3.4.1
+  shared_preferences: ^2.3.2
+  onesignal_flutter: ^5.5.1
 
 dev_dependencies:
   flutter_test:

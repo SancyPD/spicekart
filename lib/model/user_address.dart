@@ -8,6 +8,8 @@ class UserAddress {
   final String country;
   final String postalCode;
   final String addressType;
+  final String firstName;
+  final String lastName;
   final bool isDefault;
 
   UserAddress({
@@ -20,20 +22,24 @@ class UserAddress {
     required this.country,
     required this.postalCode,
     required this.addressType,
+    this.firstName = '',
+    this.lastName = '',
     required this.isDefault,
   });
 
   factory UserAddress.fromJson(Map<String, dynamic> json) {
     return UserAddress(
       addressId: json['address_id'] ?? json['id'],
-      addressLine1: json['address_line_1'] ?? '',
-      addressLine2: json['address_line_2'],
+      addressLine1: json['address_line1'] ?? '',
+      addressLine2: json['address_line2'],
       landmark: json['landmark'],
       city: json['city'] ?? '',
       state: json['state'] ?? '',
       country: json['country'] ?? '',
       postalCode: json['postal_code']?.toString() ?? '',
       addressType: json['address_type'] ?? 'Home',
+      firstName: json['first_name'] ?? '',
+      lastName: json['last_name'] ?? '',
       isDefault: json['is_default'] == 1 || json['is_default'] == true,
     );
   }
@@ -46,6 +52,8 @@ class UserAddress {
       'country': country,
       'postal_code': postalCode,
       'address_type': addressType,
+      'first_name': firstName,
+      'last_name': lastName,
       'is_default': isDefault ? 1 : 0,
     };
 

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:spicekart/utils/string_extensions.dart';
 
 FavouritesListResponse favouritesListResponseFromJson(String str) => FavouritesListResponse.fromJson(json.decode(str));
 
@@ -8,23 +9,55 @@ class FavouritesListResponse {
   int status;
   String message;
   List<Datum> data;
+  Meta? meta;
 
   FavouritesListResponse({
     required this.status,
     required this.message,
     required this.data,
+    this.meta,
   });
 
   factory FavouritesListResponse.fromJson(Map<String, dynamic> json) => FavouritesListResponse(
-    status: json["status"],
-    message: json["message"],
+    status: json["status"] ?? 0,
+    message: json["message"] ?? "",
     data: List<Datum>.from(json["data"].map((x) => Datum.fromJson(x))),
+    meta: json["meta"] != null ? Meta.fromJson(json["meta"]) : null,
   );
 
   Map<String, dynamic> toJson() => {
     "status": status,
     "message": message,
     "data": List<dynamic>.from(data.map((x) => x.toJson())),
+    "meta": meta?.toJson(),
+  };
+}
+
+class Meta {
+  int currentPage;
+  int perPage;
+  int total;
+  int lastPage;
+
+  Meta({
+    required this.currentPage,
+    required this.perPage,
+    required this.total,
+    required this.lastPage,
+  });
+
+  factory Meta.fromJson(Map<String, dynamic> json) => Meta(
+    currentPage: json["current_page"] ?? 1,
+    perPage: json["per_page"] ?? 20,
+    total: json["total"] ?? 0,
+    lastPage: json["last_page"] ?? 1,
+  );
+
+  Map<String, dynamic> toJson() => {
+    "current_page": currentPage,
+    "per_page": perPage,
+    "total": total,
+    "last_page": lastPage,
   };
 }
 
@@ -80,19 +113,19 @@ class Product {
   });
 
   factory Product.fromJson(Map<String, dynamic> json) => Product(
-    id: json["id"],
-    slug: json["slug"],
-    productName: json["product_name"],
-    productDescription: json["product_description"],
-    productBarcode: json["product_barcode"],
-    categoryId: json["category_id"],
-    brandId: json["brand_id"],
-    productImage: json["product_image"],
+    id: json["id"] ?? 0,
+    slug: json["slug"] ?? "",
+    productName: json["product_name"] as String? ?? "",
+    productDescription: json["product_description"] ?? "",
+    productBarcode: json["product_barcode"] ?? "",
+    categoryId: json["category_id"] ?? 0,
+    brandId: json["brand_id"] ?? 0,
+    productImage: json["product_image"] ?? "",
     metaTitle: json["meta_title"],
     metaDescription: json["meta_description"],
     metaKeywords: json["meta_keywords"],
-    productTax: json["product_tax"],
-    productStatus: json["product_status"],
+    productTax: json["product_tax"] ?? "",
+    productStatus: json["product_status"] ?? "",
   );
 
   Map<String, dynamic> toJson() => {
@@ -130,12 +163,12 @@ class User {
   });
 
   factory User.fromJson(Map<String, dynamic> json) => User(
-    id: json["id"],
+    id: json["id"] ?? 0,
     firstName: json["first_name"],
     lastName: json["last_name"],
-    email: json["email"],
+    email: json["email"] ?? "",
     phone: json["phone"],
-    regionId: json["region_id"],
+    regionId: json["region_id"] ?? 0,
   );
 
   Map<String, dynamic> toJson() => {

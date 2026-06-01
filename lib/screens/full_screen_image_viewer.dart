@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 class FullScreenImageViewer extends StatefulWidget {
   final List<String> imageUrls;
@@ -51,22 +52,21 @@ class _FullScreenImageViewerState extends State<FullScreenImageViewer> {
                 minScale: 0.5,
                 maxScale: 4.0,
                 child: Center(
-                  child: Image.network(
-                    'https://spicekart.mockupz.in/storage/products/${widget.imageUrls[index]}',
+                  child: CachedNetworkImage(
+                    imageUrl: 'https://spicekart1.mockupz.in/storage/products/${widget.imageUrls[index]}',
                     fit: BoxFit.contain,
-                    loadingBuilder: (context, child, loadingProgress) {
-                      if (loadingProgress == null) return child;
-                      return Center(
+                    fadeInDuration: const Duration(milliseconds: 150),
+                    placeholder: (context, url) => const Center(
+                      child: SizedBox(
+                        width: 40,
+                        height: 40,
                         child: CircularProgressIndicator(
-                          value: loadingProgress.expectedTotalBytes != null
-                              ? loadingProgress.cumulativeBytesLoaded /
-                                  loadingProgress.expectedTotalBytes!
-                              : null,
                           color: Colors.white,
+                          strokeWidth: 2,
                         ),
-                      );
-                    },
-                    errorBuilder: (context, error, stackTrace) => const Icon(
+                      ),
+                    ),
+                    errorWidget: (context, url, error) => const Icon(
                       Icons.broken_image,
                       color: Colors.white,
                       size: 50,

@@ -3,7 +3,9 @@ import 'package:flutter/services.dart';
 import 'region_selection_screen.dart';
 
 class SubscriptionAgreementScreen extends StatefulWidget {
-  const SubscriptionAgreementScreen({super.key});
+  final bool isFromMyAccount;
+
+  const SubscriptionAgreementScreen({super.key, this.isFromMyAccount = false});
 
   @override
   State<SubscriptionAgreementScreen> createState() => _SubscriptionAgreementScreenState();
@@ -198,12 +200,18 @@ class _SubscriptionAgreementScreenState extends State<SubscriptionAgreementScree
                   child: ElevatedButton(
                     onPressed: _isAgreed
                         ? () {
-                            Navigator.pushReplacement(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => const RegionSelectionScreen(),
-                              ),
-                            );
+                            if (widget.isFromMyAccount) {
+                              int count = 0;
+                              Navigator.of(context).popUntil((_) => count++ >= 2);
+                            } else {
+                              Navigator.pushAndRemoveUntil(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => const RegionSelectionScreen(fromHome: false,),
+                                ),
+                                (route) => false,
+                              );
+                            }
                           }
                         : null,
                     style: ElevatedButton.styleFrom(

@@ -3,7 +3,13 @@ import 'package:flutter/services.dart';
 import 'dart:async';
 import '../utils/app_theme.dart';
 import 'subscription_screen.dart';
+import 'subscription_agreement_screen.dart';
+import 'main_screen.dart';
+import 'region_selection_screen.dart';
 import '../services/api_service.dart';
+import '../controllers/cart_controller.dart';
+import 'package:get/get.dart';
+import 'login_screen.dart';
 
 
 class OtpScreen extends StatefulWidget {
@@ -35,6 +41,7 @@ class _OtpScreenState extends State<OtpScreen> {
   }
 
   void _startTimer() {
+    _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (_remainingSeconds > 0) {
         setState(() {
@@ -60,16 +67,39 @@ class _OtpScreenState extends State<OtpScreen> {
     }
   }
 
-  void _resendOtp() {
+  Future<void> _resendOtp() async {
+    if (_remainingSeconds > 0 || _isLoading) return;
+
     setState(() {
-      _remainingSeconds = 293;
+      _isLoading = true;
     });
-    _startTimer();
-    // Clear OTP fields
-    for (var controller in _otpControllers) {
-      controller.clear();
+
+    final success = await ApiService.sendOtp(widget.phoneOrEmail);
+
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+      });
+
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('OTP sent successfully!')),
+        );
+        setState(() {
+          _remainingSeconds = 293;
+        });
+        _startTimer();
+        // Clear OTP fields
+        for (var controller in _otpControllers) {
+          controller.clear();
+        }
+        _focusNodes[0].requestFocus();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to send OTP. Please try again.')),
+        );
+      }
     }
-    _focusNodes[0].requestFocus();
   }
 
   @override
@@ -97,13 +127,76 @@ class _OtpScreenState extends State<OtpScreen> {
       });
 
       if (success && mounted) {
-        // Navigate to subscription screen
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => const SubscriptionScreen(),
-          ),
-        );
+        // Sync cart count after successful login
+        if (Get.isRegistered<CartController>()) {
+          CartController.to.updateCartCount();
+        }
+
+        // Check for pending action FIRST
+        if (ApiService.pendingAction != null) {
+          final success = await ApiService.executePendingAction();
+          if (success && mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Successfully!')),
+            );
+          }
+        }
+
+        // COMMENTED: Check for active subscription before deciding where to navigate
+        /*
+        final subResult = await ApiService.checkActiveSubscription();
+        if (subResult['status'] == 1 && subResult['data'] != null) {
+          // Already has a subscription, skip Plans and Agreement
+          if (ApiService.selectedRegion != null &&
+              ApiService.selectedRegion!.isNotEmpty) {
+            Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(
+                builder: (context) => MainScreen(
+                    initialRegion: ApiService.selectedRegion!),
+              ),
+              (route) => false,
+            );
+          } else {
+            Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const RegionSelectionScreen(fromHome: false,),
+              ),
+              (route) => false,
+            );
+          }
+        } else {
+          // No active subscription, go to Subscription Plans screen
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const SubscriptionScreen(),
+            ),
+          );
+        }
+        */
+
+        // FOR NOW: Skip subscription checking
+        if (ApiService.selectedRegion != null &&
+            ApiService.selectedRegion!.isNotEmpty) {
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(
+              builder: (context) => MainScreen(
+                  initialRegion: ApiService.selectedRegion!),
+            ),
+            (route) => false,
+          );
+        } else {
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const RegionSelectionScreen(fromHome: false,),
+            ),
+            (route) => false,
+          );
+        }
       } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -123,15 +216,26 @@ class _OtpScreenState extends State<OtpScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: SafeArea(
-        child: Column(
-          children: [
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, dynamic result) {
+        if (didPop) return;
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const LoginScreen(),
+          ),
+        );
+      },
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: SafeArea(
+          child: Column(
+            children: [
 
-            // Main content area (white background)
-            Expanded(
-              child: Container(
+              // Main content area (white background)
+              Expanded(
+                child: Container(
                 color: Colors.white,
                 child: SingleChildScrollView(
                   child: Padding(
@@ -140,16 +244,19 @@ class _OtpScreenState extends State<OtpScreen> {
                       children: [
                         const SizedBox(height: 20),
                         // Back button
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: TextButton(
-                            onPressed: () => Navigator.pop(context),
-                            style: TextButton.styleFrom(
-                              padding: EdgeInsets.zero,
-                              minimumSize: Size.zero,
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            ),
-                            child: const Text(
+                        GestureDetector(
+                          onTap: () {
+                            Navigator.pushReplacement(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const LoginScreen(),
+                              ),
+                            );
+                          },
+                          behavior: HitTestBehavior.opaque,
+                          child: const Padding(
+                            padding: EdgeInsets.only(top: 8, bottom: 8, right: 20),
+                            child: Text(
                               'Back',
                               style: TextStyle(
                                 color: Color(0xFF4D555C),
@@ -193,7 +300,7 @@ class _OtpScreenState extends State<OtpScreen> {
                                 widget.phoneOrEmail,
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
-                                  color: AppTheme.instance.secondaryLightBlue,
+                                  color: AppTheme.instance.secondaryColor,
                                   fontWeight: FontWeight.w500,
                                   fontSize: 16,
                                 ),
@@ -252,7 +359,7 @@ class _OtpScreenState extends State<OtpScreen> {
                                   focusedBorder: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(8),
                                     borderSide: BorderSide(
-                                      color: AppTheme.instance.secondaryLightBlue,
+                                      color: AppTheme.instance.secondaryColor,
                                       width: 2,
                                     ),
                                   ),
@@ -297,12 +404,16 @@ class _OtpScreenState extends State<OtpScreen> {
                             ),
                             Expanded(child: const SizedBox(width: 8)),
                             GestureDetector(
-                              onTap: _resendOtp,
-                              child: const Text(
+                              onTap: _remainingSeconds > 0 || _isLoading
+                                  ? null
+                                  : _resendOtp,
+                              child: Text(
                                 'Resend code',
                                 style: TextStyle(
                                   fontSize: 14,
-                                  color: Colors.green,
+                                  color: _remainingSeconds > 0 || _isLoading
+                                      ? Colors.grey.shade400
+                                      : Colors.green,
                                   fontWeight: FontWeight.w500,
                                 ),
                               ),
@@ -332,7 +443,7 @@ class _OtpScreenState extends State<OtpScreen> {
                             },
 
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: AppTheme.instance.secondaryLightBlue,
+                              backgroundColor: AppTheme.instance.secondaryColor,
                               foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(vertical: 16),
                               shape: RoundedRectangleBorder(
@@ -381,7 +492,6 @@ class _OtpScreenState extends State<OtpScreen> {
           ],
         ),
       ),
-    );
+    ));
   }
 }
-

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import '../utils/string_extensions.dart';
 
 Brands brandsFromJson(String str) => Brands.fromJson(json.decode(str));
 
@@ -16,9 +17,9 @@ class Brands {
   });
 
   factory Brands.fromJson(Map<String, dynamic> json) => Brands(
-    status: json["status"],
+    status: json["status"] ?? 0,
     data: List<Datum>.from(json["data"].map((x) => Datum.fromJson(x))),
-    message: json["message"],
+    message: json["message"] ?? "",
   );
 
   Map<String, dynamic> toJson() => {
@@ -42,10 +43,10 @@ class Datum {
   });
 
   factory Datum.fromJson(Map<String, dynamic> json) => Datum(
-    id: json["id"],
-    brandName: json["brand_name"],
+    id: json["id"] ?? 0,
+    brandName: (json["brand_name"] as String? ?? "").toSentenceCase(),
     brandImage: json["brand_image"]??"",
-    isActive: json["is_active"],
+    isActive: json["is_active"] ?? 0,
   );
 
   Map<String, dynamic> toJson() => {

@@ -16,9 +16,9 @@ class CategoryList {
   });
 
   factory CategoryList.fromJson(Map<String, dynamic> json) => CategoryList(
-    status: json["status"],
+    status: json["status"] ?? 0,
     data: List<Category>.from(json["data"].map((x) => Category.fromJson(x))),
-    message: json["message"],
+    message: json["message"] ?? "",
   );
 
   Map<String, dynamic> toJson() => {
@@ -52,11 +52,11 @@ class Category {
   });
 
   factory Category.fromJson(Map<String, dynamic> json) => Category(
-    id: json["id"],
-    categoryName: json["category_name"],
+    id: json["id"] ?? 0,
+    categoryName: json["category_name"] ?? "",
     categorySlug: json["category_slug"],
-    position: json["position"],
-    isActive: json["is_active"],
+    position: json["position"] ?? 0,
+    isActive: json["is_active"] ?? 0,
     categoryImage: json["category_image"],
     metaTitle: json["meta_title"],
     metaDescription: json["meta_description"],

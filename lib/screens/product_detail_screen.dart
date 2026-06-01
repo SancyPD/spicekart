@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../utils/app_theme.dart';
 import 'package:spicekart/model/product_detail_response.dart' as pd;
 import 'package:spicekart/services/api_service.dart';
 import 'package:spicekart/screens/full_screen_image_viewer.dart';
 import 'cart_screen.dart';
+import '../utils/guest_checker.dart';
+import 'product_reviews_screen.dart';
 
 class ProductDetailScreen extends StatefulWidget {
   final int productId;
@@ -56,6 +59,13 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 
   Future<void> _toggleFavorite() async {
+    if (!GuestChecker.check(
+      action: PendingAction(
+        type: PendingActionType.wishlist,
+        productId: widget.productId,
+      ),
+    )) return;
+
     final success = _isFavorite
         ? await ApiService.removeFromWishlist(widget.productId)
         : await ApiService.addFavourite(widget.productId);
@@ -92,12 +102,21 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
     final variant = data.variants[_selectedVariantIndex];
 
+    if (!GuestChecker.check(
+      action: PendingAction(
+        type: PendingActionType.cart,
+        productId: data.id,
+        variantId: variant.id,
+        quantity: _quantity,
+      ),
+    )) return;
+
     setState(() {
       _isLoading = true;
     });
 
     try {
-      final success = await ApiService.addToCart(
+      final success = await ApiService.addProductToCart(
         productId: data.id,
         variantId: variant.id,
         quantity: _quantity,
@@ -109,14 +128,16 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       });
 
       if (success) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
+            duration: const Duration(seconds: 5),
+            behavior: SnackBarBehavior.floating,
             content: Text('${data.productName} added to cart'),
-            duration: const Duration(seconds: 2),
             action: SnackBarAction(
-              label: 'VIEW CART',
+              label: 'View Cart',
               onPressed: () {
-                Navigator.pushReplacement(
+                Navigator.push(
                   context,
                   MaterialPageRoute(builder: (context) => const CartScreen()),
                 );
@@ -124,6 +145,10 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
             ),
           ),
         );
+        // Force hide after 5 sec
+        Future.delayed(const Duration(seconds: 5), () {
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        });
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Failed to add product to cart')),
@@ -201,7 +226,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     const SizedBox(height: 12),
 
                     // Pack Sizes Section
-                    _buildPackSizesSection(data),
+                    if (data.variants.length > 1) _buildPackSizesSection(data),
 
                     const SizedBox(height: 12),
 
@@ -209,9 +234,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     _buildAboutSection(data),
 
                     const SizedBox(height: 12),
-
-                    /* // Ratings & Reviews
-                    _buildRatingsSection(),*/
+                     // Ratings & Reviews
+                    _buildRatingsSection(data),
                     const SizedBox(height: 20),
                   ],
                 ),
@@ -325,11 +349,16 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                       ),
                     );
                   },
-                  child: Image.network(
-                    'https://spicekart.mockupz.in/storage/products/${imageUrls[index]}',
+                  child: CachedNetworkImage(
+                    imageUrl: 'https://spicekart1.mockupz.in/storage/products/${imageUrls[index]}',
                     height: 300,
                     fit: BoxFit.contain,
-                    errorBuilder: (context, error, stackTrace) =>
+                    memCacheWidth: 1000, // Higher resolution for detail view
+                    fadeInDuration: const Duration(milliseconds: 150),
+                    placeholder: (context, url) => Container(
+                      color: Colors.grey.shade50,
+                    ),
+                    errorWidget: (context, url, error) =>
                         const Icon(Icons.image, size: 100),
                   ),
                 );
@@ -345,7 +374,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               children: [
                 Container(
                   decoration: BoxDecoration(
-                    color: AppTheme.instance.secondaryLightBlue,
+                    color: AppTheme.instance.secondaryColor,
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Row(
@@ -393,7 +422,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         color: index == _currentImageIndex
-                            ? AppTheme.instance.secondaryLightBlue
+                            ? AppTheme.instance.secondaryColor
                             : const Color(0xFFC8D3D9),
                       ),
                     ),
@@ -423,14 +452,14 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               Text(
                 data.brandName,
                 style: TextStyle(
-                  color: AppTheme.instance.secondaryLightBlue,
+                  color: AppTheme.instance.secondaryColor,
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
                 ),
               ),
               Icon(
                 Icons.chevron_right,
-                color: AppTheme.instance.secondaryLightBlue,
+                color: AppTheme.instance.secondaryColor,
                 size: 18,
               ),
               const Spacer(),
@@ -594,12 +623,12 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
                       color: isSelected
-                          ? const Color(0xFFF0F7FF)
+                          ? AppTheme.instance.backgroundColor
                           : Colors.white,
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(
                         color: isSelected
-                            ? AppTheme.instance.secondaryLightBlue
+                            ? AppTheme.instance.secondaryColor
                             : const Color(0xFFCCE6FA),
                         width: isSelected ? 1.5 : 1,
                       ),
@@ -738,82 +767,113 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     );
   }
 
-  Widget _buildRatingsSection() {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: const [
-              Text(
-                'Ratings & Reviews',
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Color(0xFF4D555C),
-                  fontWeight: FontWeight.w600,
-                  fontFamily: 'ITC Avant Garde Gothic Pro',
-                ),
-              ),
-              Icon(Icons.chevron_right, color: Color(0xFF4D555C)),
-            ],
-          ),
-          const SizedBox(height: 4),
-          const Text(
-            'Verified Purchases Only',
-            style: TextStyle(
-              fontSize: 14,
-              color: Color(0xFF4D555C),
-              fontWeight: FontWeight.w500,
-              fontFamily: 'ITC Avant Garde Gothic Pro',
+  Widget _buildRatingsSection(pd.Data data) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ProductReviewsScreen(
+              ratings: data.ratings,
+              productName: data.productName,
             ),
           ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              const Text(
-                '4.1',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Color(0xFF4D555C),
-                  fontWeight: FontWeight.w500,
-                  fontFamily: 'ITC Avant Garde Gothic Pro',
-                ),
-              ),
-              const SizedBox(width: 8),
-              Row(
-                children: List.generate(
-                  5,
-                  (index) => Image.asset(
-                    'assets/images/star.png',
-                    width: 20,
-                    height: 20,
-                    fit: BoxFit.contain,
-                    color: index < 4
-                        ? const Color(0xFF3EA334)
-                        : const Color(0xFF3EA334).withOpacity(0.5),
+        );
+      },
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Ratings & Reviews',
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Color(0xFF374338),
+                    fontWeight: FontWeight.w700,
+                    fontFamily: 'ITC Avant Garde Gothic Pro',
                   ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          const Text(
-            '(1001 Ratings And 12 Reviews)',
-            style: TextStyle(
-              fontSize: 14,
-              color: Color(0xFF4D555C),
-              fontWeight: FontWeight.w500,
-              fontFamily: 'ITC Avant Garde Gothic Pro',
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: const Color(0xFFEEEEEE)),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Icon(
+                    Icons.chevron_right,
+                    color: Color(0xFF4D555C),
+                    size: 20,
+                  ),
+                ),
+              ],
             ),
-          ),
-        ],
+            const SizedBox(height: 4),
+            const Text(
+              'Verified Purchases Only',
+              style: TextStyle(
+                fontSize: 14,
+                color: Color(0xFF4D555C),
+                fontWeight: FontWeight.w500,
+                fontFamily: 'ITC Avant Garde Gothic Pro',
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Text(
+                  data.averageRating.toStringAsFixed(1),
+                  style: const TextStyle(
+                    fontSize: 18,
+                    color: Color(0xFF374338),
+                    fontWeight: FontWeight.w700,
+                    fontFamily: 'ITC Avant Garde Gothic Pro',
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Row(
+                  children: List.generate(
+                    5,
+                    (index) {
+                      double ratingValue = data.averageRating.toDouble();
+                      IconData icon;
+                      if (ratingValue >= index + 1) {
+                        icon = Icons.star;
+                      } else if (ratingValue > index) {
+                        icon = Icons.star_half;
+                      } else {
+                        icon = Icons.star_border;
+                      }
+                      return Icon(
+                        icon,
+                        color: const Color(0xFF3EA334),
+                        size: 20,
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '(${data.totalRatings} Ratings And ${data.ratings.length} Reviews)',
+              style: const TextStyle(
+                fontSize: 14,
+                color: Color(0xFF4D555C),
+                fontWeight: FontWeight.w500,
+                fontFamily: 'ITC Avant Garde Gothic Pro',
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -837,7 +897,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         child: ElevatedButton(
           onPressed: _addToCart,
           style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF4EAEF7),
+            backgroundColor: AppTheme.instance.secondaryColor,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(8),
             ),

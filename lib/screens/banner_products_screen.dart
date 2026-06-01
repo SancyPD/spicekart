@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../utils/app_theme.dart';
 import '../services/api_service.dart';
 import '../model/banner_products.dart';
 import 'product_detail_screen.dart';
+import 'cart_screen.dart';
+import '../utils/guest_checker.dart';
 
 class BannerProductsScreen extends StatefulWidget {
   final int bannerId;
@@ -20,14 +23,20 @@ class BannerProductsScreen extends StatefulWidget {
 }
 
 class _BannerProductsScreenState extends State<BannerProductsScreen> {
-  late Future<BannerProducts?> _bannerProductsFuture;
+  List<Product> _products = [];
+  bool _isLoading = true;
+  bool _isLoadingMore = false;
+  int _currentPage = 1;
+  int _lastPage = 1;
+  final ScrollController _scrollController = ScrollController();
   final Map<int, Variant> _selectedVariants = {};
+  final Set<int> _addingProductIds = {};
 
   @override
   void initState() {
     super.initState();
-    _bannerProductsFuture = ApiService.getBannerProducts(widget.bannerId);
-    // Set system status bar style
+    _fetchProducts();
+    _scrollController.addListener(_onScroll);
     SystemChrome.setSystemUIOverlayStyle(
       const SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
@@ -35,6 +44,59 @@ class _BannerProductsScreenState extends State<BannerProductsScreen> {
         statusBarBrightness: Brightness.light,
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
+      if (!_isLoading && !_isLoadingMore && _currentPage < _lastPage) {
+        _fetchProducts(loadMore: true);
+      }
+    }
+  }
+
+  Future<void> _fetchProducts({bool loadMore = false}) async {
+    if (loadMore) {
+      setState(() => _isLoadingMore = true);
+      _currentPage++;
+    } else {
+      setState(() {
+        _isLoading = true;
+        _currentPage = 1;
+      });
+    }
+
+    try {
+      final response = await ApiService.getBannerProducts(widget.bannerId, page: _currentPage);
+      if (response != null && response.status == 1) {
+        setState(() {
+          if (loadMore) {
+            _products.addAll(response.data.product);
+          } else {
+            _products = response.data.product;
+          }
+          _lastPage = response.meta?.lastPage ?? 1;
+          _isLoading = false;
+          _isLoadingMore = false;
+        });
+      } else {
+        setState(() {
+          _isLoading = false;
+          _isLoadingMore = false;
+        });
+      }
+    } catch (e) {
+      print('Error fetching banner products: $e');
+      setState(() {
+        _isLoading = false;
+        _isLoadingMore = false;
+      });
+    }
   }
 
   @override
@@ -73,34 +135,38 @@ class _BannerProductsScreenState extends State<BannerProductsScreen> {
             ),
             // Product Grid
             Expanded(
-              child: FutureBuilder<BannerProducts?>(
-                future: _bannerProductsFuture,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
-                  } else if (snapshot.hasError) {
-                    return Center(child: Text('Error: ${snapshot.error}'));
-                  } else if (!snapshot.hasData || snapshot.data!.data.product.isEmpty) {
-                    return const Center(child: Text('No products found for this banner.'));
-                  }
-
-                  final products = snapshot.data!.data.product;
-
-                  return GridView.builder(
-                    padding: const EdgeInsets.all(16),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 3,
-                      crossAxisSpacing: 12,
-                      mainAxisSpacing: 16,
-                      childAspectRatio: 0.44,
-                    ),
-                    itemCount: products.length,
-                    itemBuilder: (context, index) {
-                      return _buildProductCard(products[index]);
-                    },
-                  );
-                },
-              ),
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _products.isEmpty
+                      ? const Center(child: Text('No products found for this banner.'))
+                      : Column(
+                          children: [
+                            Expanded(
+                              child: GridView.builder(
+                                controller: _scrollController,
+                                cacheExtent: 1000.0,
+                                padding: const EdgeInsets.all(16),
+                                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: 3,
+                                  crossAxisSpacing: 12,
+                                  mainAxisSpacing: 16,
+                                  childAspectRatio: 0.44,
+                                ),
+                                itemCount: _products.length,
+                                itemBuilder: (context, index) {
+                                  return _buildProductCard(_products[index]);
+                                },
+                              ),
+                            ),
+                            if (_isLoadingMore)
+                              const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 16),
+                                child: Center(
+                                  child: CircularProgressIndicator(),
+                                ),
+                              ),
+                          ],
+                        ),
             ),
           ],
         ),
@@ -153,11 +219,15 @@ class _BannerProductsScreenState extends State<BannerProductsScreen> {
                     child: Padding(
                       padding: const EdgeInsets.all(12.0),
                       child: product.productImage.isNotEmpty
-                          ? Image.network(
-                              'https://spicekart.mockupz.in/storage/products/${product.productImage}',
+                          ? CachedNetworkImage(
+                              imageUrl: 'https://spicekart1.mockupz.in/storage/products/${product.productImage}',
                               fit: BoxFit.contain,
-                              errorBuilder: (context, error, stackTrace) =>
-                                  Image.asset(
+                              memCacheWidth: 250, // Optimize memory for 3-column grid
+                              fadeInDuration: const Duration(milliseconds: 150),
+                              placeholder: (context, url) => Container(
+                                color: AppTheme.instance.backgroundColor.withOpacity(0.5),
+                              ),
+                              errorWidget: (context, url, error) => Image.asset(
                                 'assets/images/no_image.png',
                                 fit: BoxFit.contain,
                               ),
@@ -172,21 +242,93 @@ class _BannerProductsScreenState extends State<BannerProductsScreen> {
                 Positioned(
                   bottom: -5,
                   right: -5,
-                  child: Container(
-                    width: 24,
-                    height: 24,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(3),
-                      border: Border.all(
-                        color: AppTheme.instance.secondaryLightBlue,
-                        width: 1,
+                  child: GestureDetector(
+                    onTap: () async {
+                      if (variant == null) return;
+
+                      if (!GuestChecker.check(
+                        action: PendingAction(
+                          type: PendingActionType.cart,
+                          productId: product.id.toInt(),
+                          variantId: variant.id.toInt(),
+                          quantity: 1,
+                        ),
+                      )) return;
+
+                      HapticFeedback.lightImpact();
+                      setState(() {
+                        _addingProductIds.add(product.id.toInt());
+                      });
+
+                      final success = await ApiService.addProductToCart(
+                        productId: product.id.toInt(),
+                        variantId: variant.id.toInt(),
+                        quantity: 1,
+                      );
+                      
+                      if (!mounted) return;
+                      setState(() {
+                        _addingProductIds.remove(product.id.toInt());
+                      });
+
+                      if (success) {
+                        if (context.mounted) {
+
+                          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              duration: const Duration(seconds: 5),
+                              behavior: SnackBarBehavior.floating,
+                              content: Text('${product.productName} added to cart'),
+                              action: SnackBarAction(
+                                label: 'View Cart',
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(builder: (context) => const CartScreen()),
+                                  );
+                                },
+                              ),
+                            ),
+                          );
+                          // Force hide after 5 sec
+                          Future.delayed(const Duration(seconds: 5), () {
+                            ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                          });
+                        }
+
+                      } else {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Failed to add to cart')),
+                          );
+                        }
+                      }
+                    },
+                    child: Container(
+                      width: 24,
+                      height: 24,
+                      decoration: BoxDecoration(
+                        color: _addingProductIds.contains(product.id.toInt()) ? AppTheme.instance.secondaryColor : Colors.white,
+                        borderRadius: BorderRadius.circular(3),
+                        border: Border.all(
+                          color: AppTheme.instance.secondaryColor,
+                          width: 1,
+                        ),
                       ),
-                    ),
-                    child: Icon(
-                      Icons.add,
-                      color: AppTheme.instance.secondaryLightBlue,
-                      size: 15,
+                      child: _addingProductIds.contains(product.id.toInt())
+                          ? const Padding(
+                              padding: EdgeInsets.all(4.0),
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : Icon(
+                              Icons.add,
+                              color: AppTheme.instance.secondaryColor,
+                              size: 15,
+                            ),
                     ),
                   ),
                 ),
@@ -219,12 +361,16 @@ class _BannerProductsScreenState extends State<BannerProductsScreen> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    weight,
-                    style: const TextStyle(
-                      color: Color(0xFF6D7A82),
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
+                  Flexible(
+                    child: Text(
+                      weight,
+                      style: const TextStyle(
+                        color: Color(0xFF6D7A82),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   const SizedBox(width: 4),
@@ -281,6 +427,7 @@ class _BannerProductsScreenState extends State<BannerProductsScreen> {
                   },
                 );
               }),
+              const SizedBox(height: 50),
             ],
           ),
         );

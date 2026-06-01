@@ -5,9 +5,16 @@ import '../services/api_service.dart';
 import '../utils/app_theme.dart';
 import 'add_edit_address_screen.dart';
 import 'checkout_screen.dart';
+import 'delivery_instructions_screen.dart';
 
 class UserAddressListScreen extends StatefulWidget {
-  const UserAddressListScreen({super.key});
+  final bool isFromCheckout;
+  final bool isInitialFlow;
+  const UserAddressListScreen({
+    super.key,
+    this.isFromCheckout = true,
+    this.isInitialFlow = false,
+  });
 
   @override
   State<UserAddressListScreen> createState() => _UserAddressListScreenState();
@@ -17,12 +24,15 @@ class _UserAddressListScreenState extends State<UserAddressListScreen> {
   List<UserAddress> _addresses = [];
   bool _isLoading = true;
   int? _selectedAddressId;
+  // Removed _cartType
 
   @override
   void initState() {
     super.initState();
     _fetchAddresses();
   }
+
+  // Removed didChangeDependencies
 
   Future<void> _fetchAddresses() async {
     setState(() => _isLoading = true);
@@ -44,31 +54,98 @@ class _UserAddressListScreenState extends State<UserAddressListScreen> {
     setState(() => _isLoading = false);
   }
 
-  void _navigateToCheckout() async {
-    if (_selectedAddressId != null) {
-      // You can store the selected address in an order provider or similar,
-      // but for now, we just proceed to CheckoutScreen as requested
-
-      try {
-        final timezone = await FlutterTimezone.getLocalTimezone();
-        print("timezone: ${timezone.identifier}");
-        await ApiService.updateUserTimezone(timezone.identifier);
-      } catch (e) {
-        print("Error getting timezone: $e");
-      }
-
-      if (!mounted) return;
-
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => const CheckoutScreen()),
-      );
-    } else {
+  Future<void> _handleSaveAddress() async {
+    if (_selectedAddressId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please select an address')),
       );
+      return;
+    }
+
+    final address = _addresses.firstWhere((a) => a.addressId == _selectedAddressId);
+
+    setState(() => _isLoading = true);
+    final success = await ApiService.updateCheckoutAddress(
+      addressId: address.addressId!,
+    );
+    
+    if (success && mounted) {
+      if (widget.isInitialFlow) {
+        final instructions = await ApiService.getDeliveryInstructions();
+        bool hasInstructions = false;
+        if (instructions != null && instructions['status'] == 1) {
+          final data = instructions['data'];
+          if (data != null && data['property_type_id'] != null && data['property_type_id'] > 0) {
+            hasInstructions = true;
+          }
+        }
+
+        if (!mounted) return;
+        setState(() => _isLoading = false);
+
+        if (hasInstructions) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const CheckoutScreen(),
+            // No RouteSettings with cartType
+            ),
+          );
+        } else {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const DeliveryInstructionsScreen(
+                isInitialFlow: true,
+              ),
+            // No RouteSettings with cartType
+            ),
+          );
+        }
+      } else {
+        setState(() => _isLoading = false);
+        Navigator.pop(context, true);
+      }
+    } else if (mounted) {
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to update address')),
+      );
     }
   }
+  Future<void> _deleteAddress(int addressId) async {
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Address'),
+        content: const Text('Are you sure you want to delete this address?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('CANCEL'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('DELETE', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      setState(() => _isLoading = true);
+      final success = await ApiService.deleteUserAddress(addressId);
+      if (success) {
+        _fetchAddresses();
+      } else {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to delete address')),
+        );
+      }
+    }
+  }
+
 
   void _navigateToAddEditAddress({UserAddress? address}) async {
     final result = await Navigator.push(
@@ -110,35 +187,6 @@ class _UserAddressListScreenState extends State<UserAddressListScreen> {
           : _addresses.isEmpty
               ? _buildEmptyState()
               : _buildAddressList(),
-      bottomNavigationBar: _addresses.isEmpty || _isLoading
-          ? null
-          : SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: SizedBox(
-                   width: double.infinity,
-                   child: ElevatedButton(
-                    onPressed: _navigateToCheckout,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF38B547),
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    child: const Text(
-                      'PROCEED TO CHECKOUT',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontFamily: 'ITC Avant Garde Gothic Pro',
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
     );
   }
 
@@ -162,7 +210,7 @@ class _UserAddressListScreenState extends State<UserAddressListScreen> {
           ElevatedButton(
             onPressed: () => _navigateToAddEditAddress(),
             style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.instance.mutedBlue,
+              backgroundColor: AppTheme.instance.mutedColor,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(8),
               ),
@@ -185,23 +233,49 @@ class _UserAddressListScreenState extends State<UserAddressListScreen> {
         const SizedBox(height: 16),
         OutlinedButton.icon(
           onPressed: () => _navigateToAddEditAddress(),
-          icon: Icon(Icons.add, color: AppTheme.instance.mutedBlue),
+          icon: Icon(Icons.add, color: AppTheme.instance.mutedColor),
           label: Text(
             'ADD NEW ADDRESS',
             style: TextStyle(
-              color: AppTheme.instance.mutedBlue,
+              color: AppTheme.instance.mutedColor,
               fontFamily: 'ITC Avant Garde Gothic Pro',
               fontWeight: FontWeight.w600,
             ),
           ),
           style: OutlinedButton.styleFrom(
-            side: BorderSide(color: AppTheme.instance.mutedBlue, width: 1.5),
+            side: BorderSide(color: AppTheme.instance.mutedColor, width: 1.5),
             padding: const EdgeInsets.symmetric(vertical: 16),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(8),
             ),
           ),
         ),
+        const SizedBox(height: 16),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: _handleSaveAddress,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.instance.secondaryColor,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: Text(
+              widget.isInitialFlow
+                  ? 'PROCEED'
+                  : (widget.isFromCheckout ? 'PROCEED TO CHECKOUT' : 'SAVE'),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontFamily: 'ITC Avant Garde Gothic Pro',
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 32),
       ],
     );
   }
@@ -215,13 +289,13 @@ class _UserAddressListScreenState extends State<UserAddressListScreen> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: isSelected ? AppTheme.instance.mutedBlue : const Color(0xFFE0E0E0),
+          color: isSelected ? AppTheme.instance.mutedColor : const Color(0xFFE0E0E0),
           width: isSelected ? 2 : 1,
         ),
         boxShadow: [
           if (isSelected)
             BoxShadow(
-              color: AppTheme.instance.mutedBlue.withValues(alpha: 0.1),
+              color: AppTheme.instance.mutedColor.withOpacity(0.1),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),
@@ -249,7 +323,7 @@ class _UserAddressListScreenState extends State<UserAddressListScreen> {
                     });
                   }
                 },
-                activeColor: AppTheme.instance.mutedBlue,
+                activeColor: AppTheme.instance.mutedColor,
               ),
               Expanded(
                 child: Column(
@@ -271,15 +345,15 @@ class _UserAddressListScreenState extends State<UserAddressListScreen> {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                             decoration: BoxDecoration(
-                              color: AppTheme.instance.mutedBlue.withValues(alpha: 0.1),
+                              color: AppTheme.instance.mutedColor.withOpacity(0.1),
                               borderRadius: BorderRadius.circular(4),
-                              border: Border.all(color: AppTheme.instance.mutedBlue),
+                              border: Border.all(color: AppTheme.instance.mutedColor),
                             ),
                             child: Text(
                               'Default',
                               style: TextStyle(
                                 fontSize: 10,
-                                color: AppTheme.instance.mutedBlue,
+                                color: AppTheme.instance.mutedColor,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
@@ -288,6 +362,13 @@ class _UserAddressListScreenState extends State<UserAddressListScreen> {
                         IconButton(
                           icon: const Icon(Icons.edit_outlined, size: 20, color: Color(0xFF4D555C)),
                           onPressed: () => _navigateToAddEditAddress(address: address),
+                          constraints: const BoxConstraints(),
+                          padding: EdgeInsets.zero,
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline, size: 20, color: Colors.red),
+                          onPressed: () => _deleteAddress(address.addressId!),
                           constraints: const BoxConstraints(),
                           padding: EdgeInsets.zero,
                         ),
@@ -305,10 +386,6 @@ class _UserAddressListScreenState extends State<UserAddressListScreen> {
                       ),
                     Text(
                       '${address.city}, ${address.state} ${address.postalCode}',
-                      style: const TextStyle(fontSize: 14, color: Color(0xFF4D555C)),
-                    ),
-                    Text(
-                      address.country,
                       style: const TextStyle(fontSize: 14, color: Color(0xFF4D555C)),
                     ),
                   ],

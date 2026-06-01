@@ -1,11 +1,15 @@
-import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import '../utils/app_theme.dart';
 import 'package:spicekart/screens/region_selection_screen.dart';
-import 'package:spicekart/screens/subscription_screen.dart';
 import '../screens/otp_screen.dart';
 import '../services/api_service.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:spicekart/screens/main_screen.dart';
+import '../controllers/cart_controller.dart';
+import 'package:get/get.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -17,6 +21,8 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _phoneController = TextEditingController();
   bool _isLoading = false;
+
+  // Remove private _googleSignIn instance, use GoogleSignIn.instance
 
   @override
   void initState() {
@@ -59,10 +65,10 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       } else {
         // Phone validation
-        // Remove any non-digits mostly, but here we expect user might type +91
-        if (input.startsWith('+91')) {
-          if (input.length == 13) {
-            // +91 + 10 digits
+        // Remove any non-digits mostly, but here we expect user might type +1
+        if (input.startsWith('+1')) {
+          if (input.length == 12) {
+            // +1 + 10 digits
             isValid = true;
             phoneOrEmail = input;
           }
@@ -70,7 +76,7 @@ class _LoginScreenState extends State<LoginScreen> {
           // Assume 10 digit number
           if (RegExp(r'^\d{10}$').hasMatch(input)) {
             isValid = true;
-            phoneOrEmail = '+91$input';
+            phoneOrEmail = '+1$input';
           }
         }
       }
@@ -117,6 +123,191 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> _handlePostSocialLoginNavigation() async {
+    if (!mounted) return;
+
+    // Sync cart count after successful login
+    if (Get.isRegistered<CartController>()) {
+      CartController.to.updateCartCount();
+    }
+
+    // Check for pending action FIRST
+    if (ApiService.pendingAction != null) {
+      final success = await ApiService.executePendingAction();
+      if (success && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Success!')),
+        );
+      }
+    }
+
+    if (ApiService.selectedRegion != null &&
+        ApiService.selectedRegion!.isNotEmpty) {
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(
+          builder: (context) =>
+              MainScreen(initialRegion: ApiService.selectedRegion!),
+        ),
+        (route) => false,
+      );
+    } else {
+      // COMMENTED: Check for active subscription before deciding where to navigate
+      /*
+      final subResult = await ApiService.checkActiveSubscription();
+      if (!mounted) return;
+
+      if (subResult['status'] == 1 && subResult['data'] != null) {
+        // Already has a subscription, skip Plans and Agreement
+        // Still need to pick a region if none is selected
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const RegionSelectionScreen(fromHome: false,),
+          ),
+          (route) => false,
+        );
+      } else {
+        // No active subscription, go to Subscription Plans screen
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const SubscriptionScreen(),
+          ),
+          (route) => false,
+        );
+      }
+      */
+      
+      // FOR NOW: Skip subscription checking and go directly to Region Selection
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const RegionSelectionScreen(fromHome: false,),
+        ),
+        (route) => false,
+      );
+    }
+  }
+
+  Future<void> _handleGoogleSignIn() async {
+    try {
+      setState(() {
+        _isLoading = true;
+      });
+
+      final GoogleSignIn googleSignIn = GoogleSignIn(
+        scopes: const ['email'],
+      );
+
+      final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
+      if (googleUser == null) {
+        setState(() {
+          _isLoading = false;
+        });
+        return;
+      }
+
+      final GoogleSignInAuthentication googleAuth =
+          await googleUser.authentication;
+      final String? accessToken = googleAuth.accessToken;
+
+      if (accessToken != null) {
+        final success = await ApiService.socialLogin(
+          accessToken: accessToken,
+          provider: 'google',
+        );
+
+        if (success && mounted) {
+          await _handlePostSocialLoginNavigation();
+        } else if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Google Sign-In failed. Please try again.'),
+            ),
+          );
+        }
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to get Google access token.'),
+          ),
+        );
+      }
+    } catch (error) {
+      print('Google Sign-In Error: $error');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error during Google Sign-In: $error'),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _handleAppleSignIn() async {
+    try {
+      setState(() {
+        _isLoading = true;
+      });
+
+      final credential = await SignInWithApple.getAppleIDCredential(
+        scopes: [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+      );
+
+      final String? idToken = credential.identityToken;
+
+      if (idToken != null) {
+        final success = await ApiService.socialLogin(
+          accessToken: idToken,
+          provider: 'apple',
+        );
+        print('accessToken:$idToken');
+
+        if (success && mounted) {
+          await _handlePostSocialLoginNavigation();
+        } else if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Apple Sign-In failed. Please try again.'),
+            ),
+          );
+        }
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to get Apple identity token.'),
+          ),
+        );
+      }
+    } catch (error) {
+      print('Apple Sign-In Error: $error');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error during Apple Sign-In: $error'),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -135,16 +326,12 @@ class _LoginScreenState extends State<LoginScreen> {
                         const SizedBox(height: 20),
                         // Back button (only show if there's a previous route)
                         if (Navigator.canPop(context))
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: TextButton(
-                              onPressed: () => Navigator.pop(context),
-                              style: TextButton.styleFrom(
-                                padding: EdgeInsets.zero,
-                                minimumSize: Size.zero,
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              ),
-                              child: const Text(
+                          GestureDetector(
+                            onTap: () => Navigator.pop(context),
+                            behavior: HitTestBehavior.opaque,
+                            child: const Padding(
+                              padding: EdgeInsets.only(top: 8, bottom: 8, right: 20),
+                              child: Text(
                                 'Back',
                                 style: TextStyle(
                                   color: Color(0xFF4D555C),
@@ -187,7 +374,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 Icons.mobile_friendly,
                                 color: Colors.grey,
                               ),
-                              hintText: 'Mobile(e.g. +919876543210) / Email',
+                              hintText: 'Mobile(e.g. +12125550123) / Email',
                               border: InputBorder.none,
                               contentPadding: EdgeInsets.symmetric(
                                 horizontal: 16,
@@ -209,22 +396,24 @@ class _LoginScreenState extends State<LoginScreen> {
                               vertical: 24,
                             ),
                             decoration: ShapeDecoration(
-                              color: AppTheme.instance.secondaryLightBlue,
+                              color: AppTheme.instance.secondaryColor,
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(10),
                               ),
                             ),
                             child: _isLoading
-                                ? const SizedBox(
-                                    height: 20,
-                                    width: 20,
-                                    child: CircularProgressIndicator(
-                                      color: Colors.white,
-                                      strokeWidth: 2,
+                                ? const Center(
+                                    child: SizedBox(
+                                      height: 20,
+                                      width: 20,
+                                      child: CircularProgressIndicator(
+                                        color: Colors.white,
+                                        strokeWidth: 2,
+                                      ),
                                     ),
                                   )
                                 : const Text(
-                                    'SEND OTP',
+                                    'Send Verification Code',
                                     textAlign: TextAlign.center,
                                     style: TextStyle(
                                       color: Colors.white,
@@ -242,13 +431,25 @@ class _LoginScreenState extends State<LoginScreen> {
                             Expanded(child: Divider(color: Colors.white)),
                             GestureDetector(
                               onTap: () {
-                                Navigator.pushReplacement(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) =>
-                                        const RegionSelectionScreen(),
-                                  ),
-                                );
+                                if (ApiService.selectedRegion != null &&
+                                    ApiService.selectedRegion!.isNotEmpty) {
+                                  Navigator.pushReplacement(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => MainScreen(
+                                          initialRegion:
+                                              ApiService.selectedRegion!),
+                                    ),
+                                  );
+                                } else {
+                                  Navigator.pushReplacement(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                           RegionSelectionScreen(fromHome:false),
+                                    ),
+                                  );
+                                }
                               },
                               child: Padding(
                                 padding: const EdgeInsets.symmetric(
@@ -271,12 +472,12 @@ class _LoginScreenState extends State<LoginScreen> {
                         SizedBox(
                           width: double.infinity,
                           child: OutlinedButton(
-                            onPressed: () {
-                              // Handle Google sign in
-                            },
+                            onPressed:
+                                _isLoading ? null : _handleGoogleSignIn,
                             style: OutlinedButton.styleFrom(
                               side: BorderSide(color: Colors.grey.shade300),
-                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 16),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(30),
                               ),
@@ -312,17 +513,18 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                           ),
                         ),
-                        const SizedBox(height: 12),
+
+                        const SizedBox(height: 16),
+
                         // Apple Sign In button
                         SizedBox(
                           width: double.infinity,
                           child: OutlinedButton(
-                            onPressed: () {
-                              // Handle Apple sign in
-                            },
+                            onPressed: _isLoading ? null : _handleAppleSignIn,
                             style: OutlinedButton.styleFrom(
                               side: BorderSide(color: Colors.grey.shade300),
-                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 16),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(30),
                               ),
@@ -330,7 +532,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(
+                                const Icon(
                                   Icons.apple,
                                   color: Colors.black,
                                   size: 24,

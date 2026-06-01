@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:get/get.dart';
 import '../utils/app_theme.dart';
 import '../services/api_service.dart';
 import '../model/category_list.dart';
 import 'category_screen.dart';
-import 'home_screen.dart';
-import 'hot_food_screen.dart';
 import 'cart_screen.dart';
+import '../controllers/main_controller.dart';
+
+import 'package:cached_network_image/cached_network_image.dart';
 
 class CategoriesScreen extends StatefulWidget {
   const CategoriesScreen({super.key});
@@ -16,16 +18,24 @@ class CategoriesScreen extends StatefulWidget {
 }
 
 class _CategoriesScreenState extends State<CategoriesScreen> {
-  int _currentIndex = 1; // Categories is index 1
   List<Category> _categories = [];
   bool _isLoading = true;
-  int _cartCount = 0;
+  Worker? _refreshWorker;
 
   @override
   void initState() {
     super.initState();
     _fetchCategories();
-    _fetchCartCount();
+    _refreshWorker = ever<int>(
+      MainController.to.categoriesRefreshTick,
+      (_) => _fetchCategories(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _refreshWorker?.dispose();
+    super.dispose();
   }
 
   Future<void> _fetchCategories() async {
@@ -46,16 +56,13 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
     }
   }
 
-  Future<void> _fetchCartCount() async {
-    final count = await ApiService.getCartCount();
-    setState(() {
-      _cartCount = count;
-    });
-  }
 
   @override
   Widget build(BuildContext context) {
-    return AnnotatedRegion<SystemUiOverlayStyle>(
+    return ListenableBuilder(
+      listenable: AppTheme.instance,
+      builder: (context, _) {
+        return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
         statusBarColor: Colors.white,
         statusBarIconBrightness: Brightness.dark,
@@ -92,8 +99,9 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
                   return _buildCategoryCard(_categories[index]);
                 },
               ),
-        bottomNavigationBar: _buildBottomNav(),
       ),
+        );
+      },
     );
   }
 
@@ -115,16 +123,19 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
           Expanded(
             child: Container(
               decoration: BoxDecoration(
-                color: AppTheme.instance.lightBlueBg,
+                color: AppTheme.instance.backgroundColor,
                 borderRadius: BorderRadius.circular(12),
               ),
               padding: const EdgeInsets.all(12),
               child: Center(
                 child: category.categoryImage != null && category.categoryImage.toString().isNotEmpty
-                    ? Image.network(
-                        'https://spicekart.mockupz.in/storage/categories/${category.categoryImage}',
+                    ? CachedNetworkImage(
+                        imageUrl: 'https://spicekart1.mockupz.in/storage/categories/${category.categoryImage}',
                         fit: BoxFit.contain,
-                        errorBuilder: (context, error, stackTrace) => const Icon(Icons.category, color: Colors.blue),
+                        placeholder: (context, url) => Container(
+                          color: AppTheme.instance.backgroundColor.withOpacity(0.5),
+                        ),
+                        errorWidget: (context, url, error) => const Icon(Icons.category, color: Colors.blue),
                       )
                     : const Icon(Icons.category, color: Colors.blue),
               ),
@@ -147,87 +158,4 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
     );
   }
 
-  Widget _buildBottomNav() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 10,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
-      child: SafeArea(
-        child: BottomNavigationBar(
-          currentIndex: _currentIndex,
-          onTap: (index) {
-            if (index == _currentIndex) return;
-            if (index == 0) {
-              Navigator.pushAndRemoveUntil(
-                context,
-                MaterialPageRoute(builder: (context) => const HomeScreen()),
-                (route) => false,
-              );
-            } else if (index == 1) {
-              Navigator.pushAndRemoveUntil(
-                context,
-                MaterialPageRoute(builder: (context) => const CategoriesScreen()),
-                (route) => false,
-              );
-            } else if (index == 2) {
-              Navigator.pushAndRemoveUntil(
-                context,
-                MaterialPageRoute(builder: (context) => const HotFoodScreen()),
-                (route) => false,
-              );
-            } else if (index == 4) {
-              Navigator.pushAndRemoveUntil(
-                context,
-                MaterialPageRoute(builder: (context) => const CartScreen()),
-                (route) => false,
-              );
-            } else {
-              setState(() => _currentIndex = index);
-            }
-          },
-          type: BottomNavigationBarType.fixed,
-          selectedItemColor: AppTheme.instance.mutedBlue,
-          unselectedItemColor: Colors.grey,
-          selectedFontSize: 12,
-          unselectedFontSize: 12,
-          items: [
-            const BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-            const BottomNavigationBarItem(icon: Icon(Icons.grid_view), label: 'Categories'),
-            const BottomNavigationBarItem(icon: Icon(Icons.restaurant), label: 'Hot food'),
-            const BottomNavigationBarItem(icon: Icon(Icons.refresh), label: 'Usuals'),
-            BottomNavigationBarItem(
-              icon: Stack(
-                children: [
-                  const Icon(Icons.shopping_cart),
-                  if (_cartCount > 0)
-                    Positioned(
-                      right: 0,
-                      top: 0,
-                      child: Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
-                        constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
-                        child: Text(
-                          _cartCount > 9 ? '9+' : '$_cartCount',
-                          style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-              label: 'Cart',
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }

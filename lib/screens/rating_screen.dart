@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import '../model/order_history_response.dart';
 import '../services/api_service.dart';
-import '../utils/app_theme.dart';
 
 class RatingScreen extends StatefulWidget {
-  final Order order;
+  final Datum order;
 
   const RatingScreen({super.key, required this.order});
 
@@ -13,9 +12,8 @@ class RatingScreen extends StatefulWidget {
 }
 
 class _RatingScreenState extends State<RatingScreen> {
-  double _deliveryRating = 0;
   Map<int, double> _itemRatings = {};
-  bool _isSubmitting = false;
+  Set<int> _loadingItems = {};
 
   @override
   void initState() {
@@ -25,35 +23,25 @@ class _RatingScreenState extends State<RatingScreen> {
     }
   }
 
-  Future<void> _submitRating() async {
-    setState(() => _isSubmitting = true);
+  Future<void> _handleRateProduct(ItemElement item, double rating) async {
+    setState(() {
+      _loadingItems.add(item.id);
+      _itemRatings[item.id] = rating;
+    });
 
-    List<Map<String, dynamic>> itemRatingsList = _itemRatings.entries.map((e) {
-      return {
-        'item_id': e.key,
-        'rating': e.value,
-      };
-    }).toList();
-
-    final success = await ApiService.rateOrder(
-      orderId: widget.order.id,
-      deliveryRating: _deliveryRating,
-      itemRatings: itemRatingsList,
+    final success = await ApiService.rateProduct(
+      productId: item.id,
+      rating: rating,
     );
 
-    setState(() => _isSubmitting = false);
+    if (mounted) {
+      setState(() {
+        _loadingItems.remove(item.id);
+      });
 
-    if (success) {
-      if (mounted) {
+      if (!success) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Rating submitted successfully!')),
-        );
-        Navigator.pop(context);
-      }
-    } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to submit rating. Please try again.')),
+          SnackBar(content: Text('Failed to rate ${item.itemName}')),
         );
       }
     }
@@ -83,7 +71,7 @@ class _RatingScreenState extends State<RatingScreen> {
               ),
             ),
             Text(
-              '${widget.order.itemCount} Items • \$${widget.order.totalAmount}',
+              '${widget.order.items.length} Items • ${widget.order.totalAmount}',
               style: const TextStyle(
                 color: Color(0xFF9AA097),
                 fontSize: 12,
@@ -92,51 +80,25 @@ class _RatingScreenState extends State<RatingScreen> {
             ),
           ],
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text(
+              'DONE',
+              style: TextStyle(
+                color: Color(0xFF374338),
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+              ),
+            ),
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            /*// Delivery Experience Card
-            _buildRatingCard(
-              title: 'Rate your delivery experience',
-              child: Row(
-                children: [
-                   Container(
-                    width: 60,
-                    height: 60,
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF5F6F7),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(Icons.delivery_dining, color: AppTheme.instance.secondaryLightBlue, size: 40),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Delivered by ${widget.order.deliveryBoyName ?? "Gilbert Fernandez Stancilas"}',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                            color: Color(0xFF374338),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        _buildStarRating(
-                          onRatingChanged: (rating) => setState(() => _deliveryRating = rating),
-                          currentRating: _deliveryRating,
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),*/
             const SizedBox(height: 16),
             // Items Section
             _buildRatingCard(
@@ -145,60 +107,18 @@ class _RatingScreenState extends State<RatingScreen> {
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 itemCount: widget.order.items.length,
-                separatorBuilder: (context, index) => const Divider(height: 32, thickness: 1, color: Color(0xFFEEEEEE)),
+                separatorBuilder: (context, index) => const Divider(
+                    height: 32, thickness: 1, color: Color(0xFFEEEEEE)),
                 itemBuilder: (context, index) {
                   final item = widget.order.items[index];
                   return _buildItemRatingRow(item);
                 },
               ),
             ),
-            const SizedBox(height: 100), // Space for bottom button
+            const SizedBox(height: 32),
           ],
         ),
       ),
-     /* bottomSheet: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 10,
-              offset: const Offset(0, -5),
-            ),
-          ],
-        ),
-        child: SizedBox(
-          width: double.infinity,
-          child: ElevatedButton(
-            onPressed: _isSubmitting ? null : _submitRating,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFE5E5E5),
-              foregroundColor: const Color(0xFF4D555C),
-              disabledBackgroundColor: Colors.grey.shade300,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              elevation: 0,
-            ),
-            child: _isSubmitting
-                ? const SizedBox(
-                    height: 20,
-                    width: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF4D555C)),
-                  )
-                : const Text(
-                    'Submit Rating',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      fontFamily: 'ITC Avant Garde Gothic Pro',
-                    ),
-                  ),
-          ),
-        ),
-      ),*/
     );
   }
 
@@ -229,7 +149,9 @@ class _RatingScreenState extends State<RatingScreen> {
     );
   }
 
-  Widget _buildItemRatingRow(OrderItem item) {
+  Widget _buildItemRatingRow(ItemElement item) {
+    bool isLoading = _loadingItems.contains(item.id);
+
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -243,9 +165,10 @@ class _RatingScreenState extends State<RatingScreen> {
           child: ClipRRect(
             borderRadius: BorderRadius.circular(12),
             child: Image.network(
-              'https://spicekart.mockupz.in/storage/products/${item.productImage}',
+              'https://spicekart1.mockupz.in/storage/products/${item.item?.productImage}',
               fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) => const Icon(Icons.image, color: Colors.grey),
+              errorBuilder: (context, error, stackTrace) =>
+                  const Icon(Icons.image, color: Colors.grey),
             ),
           ),
         ),
@@ -255,7 +178,7 @@ class _RatingScreenState extends State<RatingScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                item.productName,
+                item.itemName,
                 style: const TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
@@ -266,16 +189,32 @@ class _RatingScreenState extends State<RatingScreen> {
               ),
               const SizedBox(height: 4),
               Text(
-                '₹${item.productPrice} • ${item.varientSize}',
+                '\$${item.unitPrice}${item.variant!.varientSize.isNotEmpty ? " • ${item.variant?.varientSize}" : ""}',
                 style: const TextStyle(
                   fontSize: 13,
                   color: Color(0xFF7A8D7C),
                 ),
               ),
               const SizedBox(height: 8),
-              _buildStarRating(
-                onRatingChanged: (rating) => setState(() => _itemRatings[item.id] = rating),
-                currentRating: _itemRatings[item.id] ?? 0,
+              Row(
+                children: [
+                  _buildStarRating(
+                    onRatingChanged: (rating) => _handleRateProduct(item, rating),
+                    currentRating: _itemRatings[item.id] ?? 0,
+                  ),
+                  if (isLoading)
+                    const Padding(
+                      padding: EdgeInsets.only(left: 12),
+                      child: SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Color(0xFF4D555C),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ],
           ),
@@ -284,7 +223,9 @@ class _RatingScreenState extends State<RatingScreen> {
     );
   }
 
-  Widget _buildStarRating({required Function(double) onRatingChanged, required double currentRating}) {
+  Widget _buildStarRating(
+      {required Function(double) onRatingChanged,
+      required double currentRating}) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: List.generate(5, (index) {
@@ -294,9 +235,10 @@ class _RatingScreenState extends State<RatingScreen> {
           onTap: () => onRatingChanged(starIndex.toDouble()),
           child: Padding(
             padding: const EdgeInsets.only(right: 8.0),
-            child: isSelected 
-              ? Image.asset('assets/images/star.png', width: 28, height: 28)
-              : const Icon(Icons.star_border, color: Color(0xFFC8D3D9), size: 32),
+            child: isSelected
+                ? Image.asset('assets/images/star.png', width: 28, height: 28)
+                : const Icon(Icons.star_border,
+                    color: Color(0xFFC8D3D9), size: 32),
           ),
         );
       }),

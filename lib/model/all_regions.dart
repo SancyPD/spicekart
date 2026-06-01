@@ -16,9 +16,9 @@ class AllRegions {
   });
 
   factory AllRegions.fromJson(Map<String, dynamic> json) => AllRegions(
-    status: json["status"],
+    status: json["status"] ?? 0,
     data: List<Region>.from(json["data"].map((x) => Region.fromJson(x))),
-    message: json["message"],
+    message: json["message"] ?? "",
   );
 
   Map<String, dynamic> toJson() => {
@@ -42,10 +42,10 @@ class Region {
   });
 
   factory Region.fromJson(Map<String, dynamic> json) => Region(
-    id: json["id"],
-    title: json["title"],
+    id: json["id"] ?? 0,
+    title: json["title"] ?? "",
     regionImage: json["region_image"],
-    isActive: json["is_active"],
+    isActive: json["is_active"] ?? 0,
   );
 
   Map<String, dynamic> toJson() => {

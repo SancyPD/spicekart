@@ -1,209 +1,217 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_stripe/flutter_stripe.dart';
+import 'package:get/get.dart';
+import 'package:spicekart/controllers/cart_controller.dart';
+import 'package:spicekart/controllers/checkout_controller.dart';
 import '../utils/app_theme.dart';
 import 'package:spicekart/services/api_service.dart';
-import 'home_screen.dart';
-import 'categories_screen.dart';
-import 'hot_food_screen.dart';
-import 'cart_screen.dart';
+import 'package:spicekart/controllers/main_controller.dart';
+import 'package:spicekart/screens/main_screen.dart';
+import '../model/payment_methods_response.dart' as pm;
 
 class PaymentMethodScreen extends StatefulWidget {
-  const PaymentMethodScreen({super.key});
+  const PaymentMethodScreen({super.key, this.fromCheckout = false});
+
+  /// When `true` (opened from checkout): only "Credit / Debit card" — no saved cards, no add-new.
+  final bool fromCheckout;
 
   @override
   State<PaymentMethodScreen> createState() => _PaymentMethodScreenState();
 }
 
 class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
-  int _currentIndex = 0; // Home is at index 0
-  String? _selectedPaymentMethod;
-  int _cartCount = 0;
+  int _currentIndex = 0;
+  bool _loading = true;
+  bool _addingPayment = false;
+  String? _error;
+  List<pm.Datum> _savedMethods = [];
 
-  final List<Map<String, dynamic>> _paymentMethods = [
-    {
-      'name': 'Master Card',
-      'logo': 'mastercard', // We'll use icon or text for now
-      'details': '7463 8472 8472 435',
-      'type': 'card',
-    },
-    {
-      'name': 'Visa',
-      'logo': 'visa',
-      'details': 'Not Registered',
-      'type': 'card',
-    },
-    {
-      'name': 'Paypal',
-      'logo': 'paypal',
-      'details': 'feliceayase@gmail.com',
-      'type': 'paypal',
-    },
-    {
-      'name': 'Apple Pay',
-      'logo': 'apple',
-      'details': '7463 8472 8472 435',
-      'type': 'apple',
-    },
-    {
-      'name': 'Google Pay',
-      'logo': 'google',
-      'details': '7463 8472 8472 435',
-      'type': 'google',
-    },
-  ];
+  /// `null` = generic Stripe card flow; otherwise Stripe `pm_` id.
+  String? _selectedPaymentMethodId;
+  static const String _genericStripeId = 'stripe_generic';
 
   @override
   void initState() {
     super.initState();
-    _fetchCartCount();
-    _fetchCartCount();
+    CartController.to.updateCartCount();
+    _restoreFromCheckout();
+    _loadPaymentMethods();
   }
 
-  Widget _buildPaymentMethodLogo(String logoType) {
-    switch (logoType.toLowerCase()) {
-      case 'mastercard':
-        return Container(
-          width: 50,
-          height: 30,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(4),
-            gradient: LinearGradient(
-              colors: [Colors.red.shade700, Colors.orange.shade600],
-            ),
-          ),
-          child: Center(
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  width: 16,
-                  height: 16,
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                Transform.translate(
-                  offset: const Offset(-6, 0),
-                  child: Container(
-                    width: 16,
-                    height: 16,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.8),
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      case 'visa':
-        return Container(
-          width: 50,
-          height: 30,
-          decoration: BoxDecoration(
-            color: Colors.blue.shade900,
-            borderRadius: BorderRadius.circular(4),
-          ),
-          child: const Center(
-            child: Text(
-              'VISA',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 1,
-              ),
-            ),
-          ),
-        );
-      case 'paypal':
-        return Container(
-          width: 50,
-          height: 30,
-          decoration: BoxDecoration(
-            color: Colors.blue.shade700,
-            borderRadius: BorderRadius.circular(4),
-          ),
-          child: const Center(
-            child: Text(
-              'PayPal',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 10,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-        );
-      case 'apple':
-        return Container(
-          width: 40,
-          height: 30,
-          decoration: BoxDecoration(
-            color: Colors.black,
-            borderRadius: BorderRadius.circular(4),
-          ),
-          child: const Icon(Icons.apple, color: Colors.white, size: 20),
-        );
-      case 'google':
-        return Container(
-          width: 40,
-          height: 30,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(4),
-            border: Border.all(color: Colors.grey.shade300),
-          ),
-          child: Center(
-            child: Container(
-              width: 24,
-              height: 24,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Colors.blue,
-                    Colors.green,
-                    Colors.yellow,
-                    Colors.red,
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                shape: BoxShape.circle,
-              ),
-              child: const Center(
-                child: Text(
-                  'G',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-      default:
-        return Container(
-          width: 40,
-          height: 30,
-          decoration: BoxDecoration(
-            color: Colors.grey.shade300,
-            borderRadius: BorderRadius.circular(4),
-          ),
-        );
+  void _restoreFromCheckout() {
+    if (!Get.isRegistered<CheckoutController>()) return;
+    final c = Get.find<CheckoutController>();
+    final pmId = c.selectedStripePaymentMethodId.value;
+    if (pmId != null && pmId.isNotEmpty) {
+      _selectedPaymentMethodId = pmId;
+    } else if (c.selectedPaymentMethod.value == 'stripe') {
+      _selectedPaymentMethodId = _genericStripeId;
     }
   }
 
-  Future<void> _fetchCartCount() async {
-    final count = await ApiService.getCartCount();
+  Future<void> _loadPaymentMethods() async {
+
     setState(() {
-      _cartCount = count;
+      _loading = true;
+      _error = null;
     });
+    final response = await ApiService.getCustomerPaymentmethods();
+    if (!mounted) return;
+    if (response == null) {
+      setState(() {
+        _loading = false;
+        _error = 'Could not load saved payment methods.';
+        _savedMethods = [];
+        _selectedPaymentMethodId ??= _genericStripeId;
+      });
+      _applySelectionToCheckout();
+      return;
+    }
+
+    final list = response.data.data
+        .where((d) => d.type == 'card' && d.card != null && d.card!.last4.isNotEmpty)
+        .toList();
+
+    setState(() {
+      _loading = false;
+      _savedMethods = list;
+      if (_selectedPaymentMethodId != null &&
+          _selectedPaymentMethodId != _genericStripeId &&
+          !_savedMethods.any((e) => e.id == _selectedPaymentMethodId)) {
+        _selectedPaymentMethodId = _genericStripeId;
+      }
+      _selectedPaymentMethodId ??=
+          list.isNotEmpty ? list.first.id : _genericStripeId;
+    });
+    _applySelectionToCheckout();
+  }
+
+  Future<void> _addNewPaymentMethod() async {
+    if (_addingPayment) return;
+    setState(() => _addingPayment = true);
+    try {
+      final resp = await ApiService.createCustomerPaymentMethod();
+      if (!mounted) return;
+
+      if (resp == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not reach the server. Try again.')),
+        );
+        return;
+      }
+
+      if (resp.status != 1) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(resp.message.isNotEmpty ? resp.message : 'Request failed')),
+        );
+        return;
+      }
+
+      final secret = resp.setupIntentClientSecret;
+      if (secret == null || secret.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Missing setup information from server.')),
+        );
+        return;
+      }
+
+      final ephemeral = resp.ephemeralKeySecret;
+      final customer = resp.customerId;
+      final bool hasCustomerSession =
+          customer != null &&
+          customer.isNotEmpty &&
+          ephemeral != null &&
+          ephemeral.isNotEmpty;
+
+      await Stripe.instance.initPaymentSheet(
+        paymentSheetParameters: SetupPaymentSheetParameters(
+          setupIntentClientSecret: secret,
+          merchantDisplayName: 'SpiceKart',
+          style: ThemeMode.light,
+          customerId: hasCustomerSession ? customer : null,
+          customerEphemeralKeySecret: hasCustomerSession ? ephemeral : null,
+        ),
+      );
+
+      await Stripe.instance.presentPaymentSheet();
+
+      if (!mounted) return;
+      await _loadPaymentMethods();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Payment method added successfully')),
+      );
+    } on StripeException catch (e) {
+      if (!mounted) return;
+      final msg = e.error.localizedMessage ?? e.error.message;
+      if (msg != null && msg.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not add card: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _addingPayment = false);
+    }
+  }
+
+  void _applySelectionToCheckout() {
+    if (!Get.isRegistered<CheckoutController>()) return;
+    final c = Get.find<CheckoutController>();
+    c.selectedPaymentMethod.value = 'stripe';
+    if (_selectedPaymentMethodId == null ||
+        _selectedPaymentMethodId == _genericStripeId) {
+      c.selectedStripePaymentMethodId.value = null;
+      c.selectedPaymentMethodSummary.value = 'Card';
+    } else {
+      c.selectedStripePaymentMethodId.value = _selectedPaymentMethodId;
+      pm.Datum? match;
+      for (final e in _savedMethods) {
+        if (e.id == _selectedPaymentMethodId) {
+          match = e;
+          break;
+        }
+      }
+      final card = match?.card;
+      c.selectedPaymentMethodSummary.value = _cardSummary(card);
+    }
+  }
+
+  String _cardSummary(pm.Card? card) {
+    if (card == null) return 'Card';
+    final brand = _displayBrand(card);
+    return '$brand ···· ${card.last4}';
+  }
+
+  String _displayBrand(pm.Card card) {
+    final d = card.displayBrand.trim();
+    if (d.isNotEmpty) return d;
+    final b = card.brand.trim();
+    if (b.isEmpty) return 'Card';
+    return b[0].toUpperCase() + b.substring(1).toLowerCase();
+  }
+
+  Widget _brandChip(pm.Card card) {
+    final label = _displayBrand(card).toUpperCase();
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1F71),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        label.length > 6 ? label.substring(0, 6) : label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0.5,
+        ),
+      ),
+    );
   }
 
   @override
@@ -219,14 +227,12 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
         body: SafeArea(
           child: Column(
             children: [
-              // Header Section
               Container(
                 padding: const EdgeInsets.all(16),
                 color: Colors.white,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Back button
                     if (Navigator.canPop(context))
                       Align(
                         alignment: Alignment.centerLeft,
@@ -247,10 +253,9 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
                           ),
                         ),
                       ),
-                    const SizedBox(height: 8),
-                    // Title
+                   /* const SizedBox(height: 8),
                     const Text(
-                      'Checkout',
+                      'Payment',
                       style: TextStyle(
                         color: Color(0xFF4D555C),
                         fontSize: 16,
@@ -259,86 +264,59 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
                         height: 1.30,
                         letterSpacing: -0.48,
                       ),
-                    ),
+                    ),*/
                   ],
                 ),
               ),
-              // Content
               Expanded(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.all(16),
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Payment Method Title
-                        const Text(
-                          'Payment Method',
-                          style: TextStyle(
-                            color: Color(0xFF4D555C),
-                            fontSize: 18,
-                            fontFamily: 'ITC Avant Garde Gothic Pro',
-                            fontWeight: FontWeight.w600,
-                            height: 1.30,
-                            letterSpacing: -0.18,
+                  child: _loading
+                      ? const Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(32),
+                            child: CircularProgressIndicator(),
+                          ),
+                        )
+                      : _buildPaymentCard(),
+                ),
+              ),
+              if (widget.fromCheckout)
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  child: SafeArea(
+                    top: false,
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          _applySelectionToCheckout();
+                          Navigator.pop(context, 'stripe');
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.instance.mutedColor,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
                           ),
                         ),
-                        const SizedBox(height: 16),
-                        // Payment Methods List
-                        ...List.generate(_paymentMethods.length, (index) {
-                          final method = _paymentMethods[index];
-                          return _buildPaymentMethodCard(method, index);
-                        }),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              // NEXT Button (Fixed at bottom)
-              Container(
-                padding: const EdgeInsets.all(16),
-                child: SafeArea(
-                  top: false,
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: _selectedPaymentMethod != null
-                          ? () {
-                              Navigator.pop(context, _selectedPaymentMethod);
-                            }
-                          : null,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.instance.mutedBlue,
-                        foregroundColor: Colors.white,
-                        disabledBackgroundColor: Colors.grey.shade300,
-                        disabledForegroundColor: Colors.grey.shade600,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                      child: const Text(
-                        'NEXT',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                          fontFamily: 'ITC Avant Garde Gothic Pro',
-                          fontWeight: FontWeight.w600,
+                        child: const Text(
+                          'NEXT',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontFamily: 'ITC Avant Garde Gothic Pro',
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
                     ),
                   ),
                 ),
-              ),
             ],
           ),
         ),
-        // Bottom Navigation Bar
         bottomNavigationBar: Container(
           decoration: BoxDecoration(
             color: Colors.white,
@@ -354,46 +332,12 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
             child: BottomNavigationBar(
               currentIndex: _currentIndex,
               onTap: (index) {
-                if (index == 0) {
-                  // Home icon tapped
-                  Navigator.pushAndRemoveUntil(
-                    context,
-                    MaterialPageRoute(builder: (context) => const HomeScreen()),
-                    (route) => false,
-                  );
-                } else if (index == 1) {
-                  // Categories icon tapped
-                  Navigator.pushAndRemoveUntil(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const CategoriesScreen(),
-                    ),
-                    (route) => false,
-                  );
-                } else if (index == 2) {
-                  // Hot food icon tapped
-                  Navigator.pushAndRemoveUntil(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const HotFoodScreen(),
-                    ),
-                    (route) => false,
-                  );
-                } else if (index == 4) {
-                  // Cart icon tapped
-                  Navigator.pushAndRemoveUntil(
-                    context,
-                    MaterialPageRoute(builder: (context) => const CartScreen()),
-                    (route) => false,
-                  );
-                } else {
-                  setState(() {
-                    _currentIndex = index;
-                  });
-                }
+                Get.offAll(() => const MainScreen());
+                MainController.to.changeTab(index);
               },
               type: BottomNavigationBarType.fixed,
-              selectedItemColor: AppTheme.instance.mutedBlue,
+              backgroundColor: Colors.white,
+              selectedItemColor: AppTheme.instance.primaryColor,
               unselectedItemColor: Colors.grey,
               selectedFontSize: 12,
               unselectedFontSize: 12,
@@ -415,36 +359,41 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
                   label: 'Usuals',
                 ),
                 BottomNavigationBarItem(
-                  icon: Stack(
-                    children: [
-                      const Icon(Icons.shopping_cart),
-                      if (_cartCount > 0)
-                        Positioned(
-                          right: 0,
-                          top: 0,
-                          child: Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: const BoxDecoration(
-                              color: Colors.red,
-                              shape: BoxShape.circle,
-                            ),
-                            constraints: const BoxConstraints(
-                              minWidth: 16,
-                              minHeight: 16,
-                            ),
-                            child: Text(
-                              _cartCount > 9 ? '9+' : '$_cartCount',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
+                  icon: Obx(() {
+                    final cartCount = CartController.to.cartCount.value;
+                    return Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        const Icon(Icons.shopping_cart),
+                        if (cartCount > 0)
+                          Positioned(
+                            right: -4,
+                            top: -4,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.red,
+                                borderRadius: BorderRadius.circular(10),
                               ),
-                              textAlign: TextAlign.center,
+                              constraints: const BoxConstraints(
+                                minWidth: 16,
+                                minHeight: 16,
+                              ),
+                              child: Text(
+                                cartCount > 99 ? '99+' : '$cartCount',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  height: 1.0,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
                             ),
                           ),
-                        ),
-                    ],
-                  ),
+                      ],
+                    );
+                  }),
                   label: 'Cart',
                 ),
               ],
@@ -455,82 +404,161 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
     );
   }
 
-  Widget _buildPaymentMethodCard(Map<String, dynamic> method, int index) {
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          _selectedPaymentMethod = method['name'];
-        });
-      },
-      child: Container(
-        margin: EdgeInsets.only(
-          bottom: index < _paymentMethods.length - 1 ? 12 : 0,
-        ),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: const Color(0xFFF1F5F7),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          children: [
-            // Logo
-            SizedBox(
-              width: 50,
-              height: 30,
-              child: _buildPaymentMethodLogo(method['logo'] as String),
+  Widget _buildPaymentCard() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Row(
+              children: [
+                Icon(Icons.account_balance_wallet_outlined,
+                    color: AppTheme.instance.secondaryColor, size: 22),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'Payment',
+                    style: TextStyle(
+                      color: Color(0xFF4D555C),
+                      fontSize: 18,
+                      fontFamily: 'ITC Avant Garde Gothic Pro',
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                if (!widget.fromCheckout)
+                  TextButton(
+                    onPressed: _addingPayment ? null : _addNewPaymentMethod,
+                    style: TextButton.styleFrom(
+                      padding: EdgeInsets.zero,
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: _addingPayment
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text(
+                            'Add new payment',
+                            style: TextStyle(
+                              decoration: TextDecoration.underline,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF4D555C),
+                            ),
+                          ),
+                  ),
+              ],
             ),
-            const SizedBox(width: 12),
-            // Details
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    method['name'] as String,
-                    style: TextStyle(
-                      color: const Color(0xFF4D555C),
-                      fontSize: 16,
-                      fontFamily: 'ITC Avant Garde Gothic Pro',
-                      fontWeight: FontWeight.w600,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 1,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    method['details'] as String,
-                    style: TextStyle(
-                      color: const Color(0xFF7F858A),
-                      fontSize: 14,
-                      fontFamily: 'ITC Avant Garde Gothic Pro',
-                      fontWeight: FontWeight.w500,
-                      height: 1.71,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 1,
-                  ),
-                ],
+          ),
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Text(
+                _error!,
+                style: const TextStyle(color: Colors.red, fontSize: 13),
               ),
             ),
-            const SizedBox(width: 8),
-            // Radio Button
-            SizedBox(
-              width: 24,
-              height: 24,
-              child: Radio<String>(
-                value: method['name'] as String,
-                groupValue: _selectedPaymentMethod,
-                onChanged: (value) {
-                  setState(() {
-                    _selectedPaymentMethod = value;
-                  });
-                },
-                activeColor: AppTheme.instance.mutedBlue,
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: _tile(
+              title: 'Credit / Debit card',
+              selected: _selectedPaymentMethodId == _genericStripeId,
+              leading: Icon(Icons.credit_card,
+                  color: AppTheme.instance.secondaryColor, size: 28),
+              onTap: () {
+                setState(() => _selectedPaymentMethodId = _genericStripeId);
+                _applySelectionToCheckout();
+              },
             ),
-          ],
+          ),
+          ..._savedMethods.map((m) {
+              final card = m.card!;
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: _tile(
+                  title: 'Ending in ${card.last4}',
+                  subtitle: _expLabel(card),
+                  selected: _selectedPaymentMethodId == m.id,
+                  leading: _brandChip(card),
+                  onTap: () {
+                    setState(() => _selectedPaymentMethodId = m.id);
+                    _applySelectionToCheckout();
+                  },
+                ),
+              );
+            }),
+          const SizedBox(height: 16),
+        ],
+      ),
+    );
+  }
+
+  String? _expLabel(pm.Card card) {
+    if (card.expMonth <= 0 || card.expYear <= 0) return null;
+    final m = card.expMonth.toString().padLeft(2, '0');
+    final y = card.expYear.toString();
+    final yy = y.length >= 2 ? y.substring(y.length - 2) : y;
+    return 'Expires $m/$yy';
+  }
+
+  Widget _tile({
+    required String title,
+    String? subtitle,
+    required Widget leading,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: selected ? const Color(0xFFF1F7FB) : const Color(0xFFF8F9FA),
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              leading,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: Color(0xFF4D555C),
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        fontFamily: 'ITC Avant Garde Gothic Pro',
+                      ),
+                    ),
+                    if (subtitle != null && subtitle.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: const TextStyle(
+                          color: Color(0xFF7F858A),
+                          fontSize: 12,
+                          fontFamily: 'ITC Avant Garde Gothic Pro',
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

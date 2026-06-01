@@ -1,24 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:get/get.dart';
 import '../utils/app_theme.dart';
-import 'home_screen.dart';
-import '../services/api_service.dart';
+import '../controllers/region_selection_controller.dart';
 import '../model/all_regions.dart';
 
-class RegionSelectionScreen extends StatefulWidget {
-  const RegionSelectionScreen({super.key});
+class RegionSelectionScreen extends StatelessWidget {
+  final bool fromHome;
+  final bool fromPreferences;
+  const RegionSelectionScreen({super.key, required this.fromHome, this.fromPreferences = false});
 
   @override
-  State<RegionSelectionScreen> createState() => _RegionSelectionScreenState();
-}
+  Widget build(BuildContext context) {
 
-class _RegionSelectionScreenState extends State<RegionSelectionScreen> {
-  late Future<AllRegions?> _regionsFuture;
-  bool _isLoading = false;
-
-  @override
-  void initState() {
-    super.initState();
     // Set system status bar style
     SystemChrome.setSystemUIOverlayStyle(
       const SystemUiOverlayStyle(
@@ -27,11 +21,9 @@ class _RegionSelectionScreenState extends State<RegionSelectionScreen> {
         statusBarBrightness: Brightness.light,
       ),
     );
-    _regionsFuture = ApiService.getAllRegions();
-  }
 
-  @override
-  Widget build(BuildContext context) {
+    final controller = Get.put(RegionSelectionController(fromHome: fromHome, fromPreferences: fromPreferences));
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: Stack(
@@ -49,7 +41,7 @@ class _RegionSelectionScreenState extends State<RegionSelectionScreen> {
                         children: [
                           if (Navigator.canPop(context))
                             TextButton(
-                              onPressed: () => Navigator.pop(context),
+                              onPressed: () => Get.back(),
                               style: TextButton.styleFrom(
                                 padding: EdgeInsets.zero,
                                 minimumSize: Size.zero,
@@ -71,7 +63,7 @@ class _RegionSelectionScreenState extends State<RegionSelectionScreen> {
                       const Text(
                         'Select Region',
                         style: TextStyle(
-                          color:  Color(0xFF323C42),
+                          color: Color(0xFF323C42),
                           fontSize: 22,
                           fontFamily: 'ITC Avant Garde Gothic Pro',
                           fontWeight: FontWeight.w600,
@@ -83,65 +75,34 @@ class _RegionSelectionScreenState extends State<RegionSelectionScreen> {
                 ),
                 // Scrollable region cards
                 Expanded(
-                  child: FutureBuilder<AllRegions?>(
-                    future: _regionsFuture,
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return const Center(child: CircularProgressIndicator());
-                      } else if (snapshot.hasError) {
-                        return Center(child: Text('Error: ${snapshot.error}'));
-                      } else if (!snapshot.hasData || snapshot.data?.data.isEmpty == true) {
-                        return const Center(child: Text('No regions found.'));
-                      }
+                  child: Obx(() {
+                    if (controller.isFetchingRegions.value) {
+                      return const Center(child: CircularProgressIndicator());
+                    } else if (controller.errorMessage.value.isNotEmpty) {
+                      return Center(child: Text(controller.errorMessage.value));
+                    } else if (controller.regions.isEmpty) {
+                      return const Center(child: Text('No regions found.'));
+                    }
 
-                      final regions = snapshot.data!.data;
-
-                      return ListView.separated(
-                        padding: const EdgeInsets.symmetric(horizontal: 24,),
-                        itemCount: regions.length,
-                        separatorBuilder: (context, index) => const SizedBox(height: 16),
-                        itemBuilder: (context, index) {
-                          final region = regions[index];
-                          return _buildRegionCard(
-                            title: region.title,
-                            description: '', 
-                            imageAsset:"https://spicekart.mockupz.in/storage/regions/${region.regionImage}" , // Might be URL or path
-                            onTap: () async {
-                              if (_isLoading) return;
-                              setState(() {
-                                _isLoading = true;
-                              });
-
-                              // Small delay to allow ripple effect to be seen and give interaction feedback
-                              await Future.delayed(const Duration(milliseconds: 200));
-
-                              if (!mounted) return;
-
-                              // Update region on server
-                              await ApiService.updateUserRegion(region.id);
-
-                              // Save selected region locally
-                              await ApiService.saveRegion(region.title);
-
-                              if (!mounted) return;
-
-                              // Pass selected region to HomeScreen
-                                Navigator.pushReplacement(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => HomeScreen(selectedRegion: region.title),
-                                ),
-                              );
-                            },
-                          );
-                        },
-                      );
-                    },
-                  ),
+                    return ListView.separated(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      itemCount: controller.regions.length,
+                      separatorBuilder: (context, index) => const SizedBox(height: 16),
+                      itemBuilder: (context, index) {
+                        final region = controller.regions[index];
+                        return _buildRegionCard(
+                          title: region.title,
+                          description: '',
+                          imageAsset: "https://spicekart1.mockupz.in/storage/regions/${region.regionImage}",
+                          onTap: () => controller.selectRegion(region),
+                        );
+                      },
+                    );
+                  }),
                 ),
                 // Footer logo
                 Container(
-                  padding: const EdgeInsets.only(bottom: 40),
+                  padding: const EdgeInsets.only(bottom: 40,top: 20),
                   child: Column(
                     children: [
                       Image.asset(
@@ -155,13 +116,17 @@ class _RegionSelectionScreenState extends State<RegionSelectionScreen> {
               ],
             ),
           ),
-          if (_isLoading)
-            Container(
-              color: Colors.black.withOpacity(0.3),
-              child: const Center(
-                child: CircularProgressIndicator(),
-              ),
-            ),
+          Obx(() {
+            if (controller.isLoading.value) {
+              return Container(
+                color: Colors.black.withOpacity(0.3),
+                child: const Center(
+                  child: CircularProgressIndicator(),
+                ),
+              );
+            }
+            return const SizedBox.shrink();
+          }),
         ],
       ),
     );
@@ -170,20 +135,20 @@ class _RegionSelectionScreenState extends State<RegionSelectionScreen> {
   Widget _buildRegionCard({
     required String title,
     required String description,
-    required dynamic imageAsset, // Changed to dynamic to handle potential different types or nulls
+    required dynamic imageAsset,
     required VoidCallback onTap,
   }) {
     return Container(
       decoration: ShapeDecoration(
-        gradient:  LinearGradient(
-          begin: Alignment(0.56, 0.57),
-          end: Alignment(0.63, 1.64),
-          colors: [Colors.white, AppTheme.instance.secondaryLightBlue],
+        gradient: LinearGradient(
+          begin: const Alignment(0.56, 0.57),
+          end: const Alignment(0.63, 1.64),
+          colors: [Colors.white, AppTheme.instance.secondaryColor],
         ),
         shape: RoundedRectangleBorder(
-          side:  BorderSide(
+          side: BorderSide(
             width: 1,
-            color: AppTheme.instance.secondaryLightBlue,
+            color: AppTheme.instance.secondaryColor,
           ),
           borderRadius: BorderRadius.circular(10),
         ),
@@ -194,7 +159,7 @@ class _RegionSelectionScreenState extends State<RegionSelectionScreen> {
           borderRadius: BorderRadius.circular(10),
           onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16,vertical: 30),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 30),
             child: Row(
               children: [
                 // Left side - Text content
@@ -233,13 +198,13 @@ class _RegionSelectionScreenState extends State<RegionSelectionScreen> {
                         width: 32,
                         height: 32,
                         fit: BoxFit.contain,
+                        color: AppTheme.instance.secondaryColor,
                       ),
                     ],
                   ),
                 ),
                 const SizedBox(width: 16),
                 // Right side - Region image
-                // Handling image: if it starts with http, use network, else asset (fallback)
                 SizedBox(
                   width: 56,
                   height: 56,
@@ -262,22 +227,18 @@ class _RegionSelectionScreenState extends State<RegionSelectionScreen> {
           errorBuilder: (context, error, stackTrace) => const Icon(Icons.image_not_supported),
         );
       } else {
-        // Try as asset, but safe fallback if not found?
-        // The previous code had specific assets.
-        // If the API returns a filename like 'kerala.png', we might need to prefix 'assets/images/'.
-        // Assuming raw path for now or fallback.
         try {
-           return Image.asset(
+          return Image.asset(
             imageSource.startsWith('assets') ? imageSource : 'assets/images/$imageSource',
             fit: BoxFit.contain,
             errorBuilder: (context, error, stackTrace) => const Icon(Icons.broken_image),
           );
         } catch (e) {
-           return const Icon(Icons.broken_image);
+          return const Icon(Icons.broken_image);
         }
       }
     }
-    return const Icon(Icons.image); // Fallback
+    return const Icon(Icons.image);
   }
 }
 

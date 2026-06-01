@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'dart:async';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../utils/app_theme.dart';
 import '../services/api_service.dart';
 import '../model/brands.dart' as brands;
 import '../model/products_list_response.dart' as products;
+import '../model/serach_response.dart' as search;
 import 'product_detail_screen.dart';
+import 'cart_screen.dart';
+import '../utils/guest_checker.dart';
 
 class CategoryScreen extends StatefulWidget {
   final int categoryId;
@@ -28,8 +33,16 @@ class _CategoryScreenState extends State<CategoryScreen> {
   int? _selectedBrandId;
   bool _isLoadingBrands = true;
   bool _isLoadingProducts = true;
+  bool _isSearching = false;
+  Timer? _searchDebounce;
+  final Set<int> _addingProductIds = {};
   // Map to store selected variant for each product ID
   final Map<int, products.Variant> _selectedVariants = {};
+  late double screenWidth;
+  final ScrollController _scrollController = ScrollController();
+  int _currentPage = 1;
+  int _lastPage = 1;
+  bool _isLoadingMore = false;
 
   @override
   void initState() {
@@ -37,16 +50,41 @@ class _CategoryScreenState extends State<CategoryScreen> {
     _fetchBrands();
     _fetchProducts();
     _searchController.addListener(_onSearchChanged);
+    _scrollController.addListener(_onScroll);
   }
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _searchController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
+  void _onScroll() {
+    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
+      if (!_isLoadingProducts && !_isLoadingMore && _currentPage < _lastPage) {
+        if (_isSearching) {
+          _fetchSearchProducts(loadMore: true);
+        } else {
+          _fetchProducts(loadMore: true);
+        }
+      }
+    }
+  }
+
   void _onSearchChanged() {
-    _filterProducts();
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 350), () {
+      if (!mounted) return;
+      final query = _searchController.text.trim();
+      if (query.isEmpty) {
+        _isSearching = false;
+        _fetchProducts();
+      } else {
+        _fetchSearchProducts();
+      }
+    });
   }
 
   Future<void> _fetchBrands() async {
@@ -67,25 +105,147 @@ class _CategoryScreenState extends State<CategoryScreen> {
     }
   }
 
-  Future<void> _fetchProducts() async {
-    setState(() => _isLoadingProducts = true);
+  Future<void> _fetchProducts({bool loadMore = false}) async {
+    if (loadMore) {
+      setState(() => _isLoadingMore = true);
+      _currentPage++;
+    } else {
+      setState(() {
+        _isLoadingProducts = true;
+        _currentPage = 1;
+      });
+    }
+
     try {
       final response = await ApiService.listProducts(
         categoryId: widget.categoryId,
         brandId: _selectedBrandId,
+        page: _currentPage,
       );
       if (response != null && response.status == 1) {
         setState(() {
-          _allProducts = response.data;
+          if (loadMore) {
+            _allProducts.addAll(response.data);
+          } else {
+            _allProducts = response.data;
+          }
+          _lastPage = response.meta?.lastPage ?? 1;
           _isLoadingProducts = false;
+          _isLoadingMore = false;
           _filterProducts();
         });
       } else {
-        setState(() => _isLoadingProducts = false);
+        setState(() {
+          if (!loadMore) {
+            _allProducts = [];
+            _filteredProducts = [];
+          }
+          _isLoadingProducts = false;
+          _isLoadingMore = false;
+        });
       }
     } catch (e) {
       print('Error fetching products: $e');
-      setState(() => _isLoadingProducts = false);
+      setState(() {
+        if (!loadMore) {
+          _allProducts = [];
+          _filteredProducts = [];
+        }
+        _isLoadingProducts = false;
+        _isLoadingMore = false;
+      });
+    }
+  }
+
+  products.Datum _mapSearchProductToProductsDatum(search.Datum item) {
+    return products.Datum(
+      id: item.id,
+      slug: item.slug,
+      productName: item.productName,
+      productDescription: item.productDescription,
+      productBarcode: item.productBarcode,
+      categoryId: item.categoryId,
+      categoryName: item.categoryName,
+      brandId: item.brandId,
+      brandName: item.brandName,
+      productImage: item.productImage,
+      metaTitle: item.metaTitle,
+      metaDescription: item.metaDescription,
+      metaKeywords: item.metaKeywords,
+      productTax: item.productTax,
+      productStatus: item.productStatus,
+      variants: item.variants
+          .map(
+            (v) => products.Variant(
+              id: v.id,
+              productId: v.productId,
+              varientSize: v.varientSize,
+              productPrice: v.productPrice,
+              storePrice: v.storePrice,
+            ),
+          )
+          .toList(),
+      regions: const [],
+      ratings: const [],
+    );
+  }
+
+  Future<void> _fetchSearchProducts({bool loadMore = false}) async {
+    final query = _searchController.text.trim();
+    if (query.isEmpty) return;
+
+    if (loadMore) {
+      setState(() => _isLoadingMore = true);
+      _currentPage++;
+    } else {
+      setState(() {
+        _isSearching = true;
+        _isLoadingProducts = true;
+        _currentPage = 1;
+      });
+    }
+
+    try {
+      final response = await ApiService.searchProducts(
+        query,
+        categoryId: widget.categoryId,
+        brandId: _selectedBrandId,
+        page: _currentPage,
+      );
+
+      if (response != null && response.status == 1) {
+        final mapped = response.data.map(_mapSearchProductToProductsDatum).toList();
+        setState(() {
+          if (loadMore) {
+            _allProducts.addAll(mapped);
+          } else {
+            _allProducts = mapped;
+          }
+          _lastPage = response.meta?.lastPage ?? 1;
+          _isLoadingProducts = false;
+          _isLoadingMore = false;
+          _filterProducts();
+        });
+      } else {
+        setState(() {
+          if (!loadMore) {
+            _allProducts = [];
+            _filteredProducts = [];
+          }
+          _isLoadingProducts = false;
+          _isLoadingMore = false;
+        });
+      }
+    } catch (e) {
+      print('Error searching products: $e');
+      setState(() {
+        if (!loadMore) {
+          _allProducts = [];
+          _filteredProducts = [];
+        }
+        _isLoadingProducts = false;
+        _isLoadingMore = false;
+      });
     }
   }
 
@@ -105,11 +265,17 @@ class _CategoryScreenState extends State<CategoryScreen> {
     } else {
       setState(() => _selectedBrandId = brandId);
     }
-    _fetchProducts();
+    final query = _searchController.text.trim();
+    if (query.isNotEmpty) {
+      _fetchSearchProducts();
+    } else {
+      _fetchProducts();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+     screenWidth = MediaQuery.of(context).size.width;
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -219,12 +385,17 @@ class _CategoryScreenState extends State<CategoryScreen> {
                           ),
                           child: Center(
                             child: brand.brandImage.isNotEmpty
-                                ? Image.network(
-                                    'https://spicekart.mockupz.in/storage/brands/${brand.brandImage}',
+                                ? CachedNetworkImage(
+                                    imageUrl: 'https://spicekart1.mockupz.in/storage/brands/${brand.brandImage}',
                                     width: 60,
                                     height: 40,
                                     fit: BoxFit.contain,
-                                    errorBuilder: (context, error, stackTrace) => Text(
+                                    placeholder: (context, url) => Container(
+                                      width: 60,
+                                      height: 40,
+                                      color: AppTheme.instance.backgroundColor.withOpacity(0.5),
+                                    ),
+                                    errorWidget: (context, url, error) => Text(
                                       brand.brandName,
                                       style: const TextStyle(fontSize: 10),
                                       textAlign: TextAlign.center,
@@ -250,18 +421,33 @@ class _CategoryScreenState extends State<CategoryScreen> {
                 ? const Center(child: CircularProgressIndicator())
                 : _filteredProducts.isEmpty
                     ? const Center(child: Text('No products found'))
-                    : GridView.builder(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 3,
-                          crossAxisSpacing: 12,
-                          mainAxisSpacing: 16,
-                          childAspectRatio: 0.55,
-                        ),
-                        itemCount: _filteredProducts.length,
-                        itemBuilder: (context, index) {
-                          return _buildProductCard(_filteredProducts[index]);
-                        },
+                    : Column(
+                        children: [
+                          Expanded(
+                            child: GridView.builder(
+                              controller: _scrollController,
+                              cacheExtent: 1000.0,
+                              padding: const EdgeInsets.symmetric(horizontal: 16),
+                              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 3,
+                                crossAxisSpacing: 12,
+                                mainAxisSpacing: 16,
+                                childAspectRatio: 0.55,
+                              ),
+                              itemCount: _filteredProducts.length,
+                              itemBuilder: (context, index) {
+                                return _buildProductCard(_filteredProducts[index]);
+                              },
+                            ),
+                          ),
+                          if (_isLoadingMore)
+                            const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 16),
+                              child: Center(
+                                child: CircularProgressIndicator(),
+                              ),
+                            ),
+                        ],
                       ),
           ),
         ],
@@ -303,15 +489,21 @@ class _CategoryScreenState extends State<CategoryScreen> {
                   height: double.infinity,
                   padding: const EdgeInsets.all(8.0),
                   decoration: BoxDecoration(
-                    color: AppTheme.instance.lightBlueBg,
+                    color: AppTheme.instance.backgroundColor,
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Center(
                     child: product.productImage.isNotEmpty
-                        ? Image.network(
-                            'https://spicekart.mockupz.in/storage/products/${product.productImage}',
+                        ? CachedNetworkImage(
+                            imageUrl: 'https://spicekart1.mockupz.in/storage/products/${product.productImage}',
+                            height: double.infinity,
                             fit: BoxFit.contain,
-                            errorBuilder: (context, error, stackTrace) => const Icon(Icons.image, color: Colors.grey),
+                            memCacheWidth: 250, // Optimize memory for 3-column grid
+                            fadeInDuration: const Duration(milliseconds: 150),
+                            placeholder: (context, url) => Container(
+                              color: AppTheme.instance.backgroundColor.withOpacity(0.5),
+                            ),
+                            errorWidget: (context, url, error) => const Icon(Icons.broken_image, color: Colors.grey),
                           )
                         : const Icon(Icons.image, color: Colors.grey),
                   ),
@@ -341,25 +533,89 @@ class _CategoryScreenState extends State<CategoryScreen> {
                 Positioned(
                   bottom: -4,
                   right: -4,
-                  child: Container(
-                    width: 24,
-                    height: 24,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: AppTheme.instance.secondaryLightBlue, width: 1),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.1),
-                          blurRadius: 2,
-                          offset: const Offset(0, 1),
+                  child: GestureDetector(
+                    onTap: () async {
+                      if (variant == null) return;
+
+                      if (!GuestChecker.check(
+                        action: PendingAction(
+                          type: PendingActionType.cart,
+                          productId: product.id.toInt(),
+                          variantId: variant.id.toInt(),
+                          quantity: 1,
                         ),
-                      ],
-                    ),
-                    child:  Icon(
-                      Icons.add,
-                      color: AppTheme.instance.secondaryLightBlue,
-                      size: 16,
+                      )) return;
+
+                      HapticFeedback.lightImpact();
+                      setState(() {
+                        _addingProductIds.add(product.id.toInt());
+                      });
+
+                      final success = await ApiService.addProductToCart(
+                        productId: product.id.toInt(),
+                        variantId: variant.id.toInt(),
+                        quantity: 1,
+                      );
+                      if (!mounted) return;
+                      setState(() {
+                        _addingProductIds.remove(product.id.toInt());
+                      });
+                      if (success) {
+                        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            duration: const Duration(seconds: 5),
+                            behavior: SnackBarBehavior.floating,
+                            content: Text('${product.productName} added to cart'),
+                            action: SnackBarAction(
+                              label: 'View Cart',
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(builder: (context) => const CartScreen()),
+                                );
+                              },
+                            ),
+                          ),
+                        );
+                        // Force hide after 5 sec
+                        Future.delayed(const Duration(seconds: 5), () {
+                          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                        });
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Failed to add to cart')),
+                        );
+                      }
+                    },
+                    child: Container(
+                      width: 24,
+                      height: 24,
+                      decoration: BoxDecoration(
+                        color: _addingProductIds.contains(product.id.toInt()) ? AppTheme.instance.secondaryColor : Colors.white,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: AppTheme.instance.secondaryColor, width: 1),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.1),
+                            blurRadius: 2,
+                            offset: const Offset(0, 1),
+                          ),
+                        ],
+                      ),
+                      child: _addingProductIds.contains(product.id.toInt())
+                          ? const Padding(
+                              padding: EdgeInsets.all(4.0),
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : Icon(
+                              Icons.add,
+                              color: AppTheme.instance.secondaryColor,
+                              size: 16,
+                            ),
                     ),
                   ),
                 ),
@@ -395,18 +651,22 @@ class _CategoryScreenState extends State<CategoryScreen> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  weight,
-                  style: TextStyle(
-                    color: AppTheme.instance.secondaryLightBlue,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
+                Flexible(
+                  child: Text(
+                    weight,
+                    style: TextStyle(
+                      color: AppTheme.instance.secondaryColor,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                 Icon(
+                Icon(
                   Icons.arrow_drop_down,
                   size: 14,
-                  color: AppTheme.instance.secondaryLightBlue,
+                  color: AppTheme.instance.secondaryColor,
                 ),
               ],
             ),
@@ -445,7 +705,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
                   title: Text(variant.varientSize),
                   trailing: Text('\$${variant.productPrice}'),
                   selected: isSelected,
-                  selectedTileColor: AppTheme.instance.lightBlueBg,
+                  selectedTileColor: AppTheme.instance.backgroundColor,
                   onTap: () {
                     setState(() {
                       _selectedVariants[product.id] = variant;
@@ -454,6 +714,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
                   },
                 );
               }).toList(),
+              const SizedBox(height: 50),
             ],
           ),
         );

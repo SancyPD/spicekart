@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:spicekart/model/wishlist_response.dart';
 import 'package:spicekart/services/api_service.dart';
+import 'package:spicekart/utils/app_theme.dart';
 import 'product_detail_screen.dart';
 
 class WishlistScreen extends StatefulWidget {
@@ -13,30 +15,63 @@ class WishlistScreen extends StatefulWidget {
 
 class _WishlistScreenState extends State<WishlistScreen> {
   bool _isLoading = true;
-  FavouritesListResponse? _wishlistData;
+  List<Datum> _wishlistItems = [];
+  final ScrollController _scrollController = ScrollController();
+  int _currentPage = 1;
+  int _lastPage = 1;
+  bool _isLoadingMore = false;
 
   @override
   void initState() {
     super.initState();
     _fetchWishlist();
+    _scrollController.addListener(_onScroll);
   }
 
-  Future<void> _fetchWishlist() async {
-    setState(() {
-      _isLoading = true;
-    });
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
+      if (!_isLoading && !_isLoadingMore && _currentPage < _lastPage) {
+        _fetchWishlist(loadMore: true);
+      }
+    }
+  }
+
+  Future<void> _fetchWishlist({bool loadMore = false}) async {
+    if (loadMore) {
+      setState(() => _isLoadingMore = true);
+      _currentPage++;
+    } else {
+      setState(() {
+        _isLoading = true;
+        _currentPage = 1;
+      });
+    }
+
     try {
-      final data = await ApiService.listFavourites();
+      final data = await ApiService.listFavourites(page: _currentPage);
       if (mounted) {
         setState(() {
-          _wishlistData = data;
+          if (loadMore) {
+            _wishlistItems.addAll(data?.data ?? []);
+          } else {
+            _wishlistItems = data?.data ?? [];
+          }
+          _lastPage = data?.meta?.lastPage ?? 1;
           _isLoading = false;
+          _isLoadingMore = false;
         });
       }
     } catch (e) {
       if (mounted) {
         setState(() {
           _isLoading = false;
+          _isLoadingMore = false;
         });
       }
     }
@@ -76,11 +111,11 @@ class _WishlistScreenState extends State<WishlistScreen> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    const Text(
+                    Text(
                       'My Wishlist',
                       style: TextStyle(
                         fontSize: 16,
-                        color: Color(0xFF4D555C),
+                        color: AppTheme.instance.secondaryColor,
                         fontWeight: FontWeight.w600,
                         fontFamily: 'ITC Avant Garde Gothic Pro',
                       ),
@@ -91,7 +126,7 @@ class _WishlistScreenState extends State<WishlistScreen> {
               Expanded(
                 child: _isLoading
                     ? const Center(child: CircularProgressIndicator())
-                    : _wishlistData == null || _wishlistData!.data.isEmpty
+                    : _wishlistItems.isEmpty
                         ? _buildEmptyState()
                         : _buildWishlist(),
               ),
@@ -131,19 +166,34 @@ class _WishlistScreenState extends State<WishlistScreen> {
   }
 
   Widget _buildWishlist() {
-    return GridView.builder(
-      padding: const EdgeInsets.all(16),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        childAspectRatio: 0.7,
-        crossAxisSpacing: 16,
-        mainAxisSpacing: 16,
-      ),
-      itemCount: _wishlistData!.data.length,
-      itemBuilder: (context, index) {
-        final item = _wishlistData!.data[index];
-        return _buildProductCard(item.product);
-      },
+    return Column(
+      children: [
+        Expanded(
+          child: GridView.builder(
+            controller: _scrollController,
+            cacheExtent: 1000.0,
+            padding: const EdgeInsets.all(16),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              childAspectRatio: 0.7,
+              crossAxisSpacing: 16,
+              mainAxisSpacing: 16,
+            ),
+            itemCount: _wishlistItems.length,
+            itemBuilder: (context, index) {
+              final item = _wishlistItems[index];
+              return _buildProductCard(item.product);
+            },
+          ),
+        ),
+        if (_isLoadingMore)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16),
+            child: Center(
+              child: CircularProgressIndicator(),
+            ),
+          ),
+      ],
     );
   }
 
@@ -158,7 +208,6 @@ class _WishlistScreenState extends State<WishlistScreen> {
         );
       },
       child: Container(
-
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(12),
@@ -180,11 +229,16 @@ class _WishlistScreenState extends State<WishlistScreen> {
                     padding: const EdgeInsets.all(20.0),
                     child: ClipRRect(
                       borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-                      child: Image.network(
-                        'https://spicekart.mockupz.in/storage/products/${product.productImage}',
-                        fit: BoxFit.cover,
+                      child: CachedNetworkImage(
+                        imageUrl: 'https://spicekart1.mockupz.in/storage/products/${product.productImage}',
+                        fit: BoxFit.contain,
                         width: double.infinity,
-                        errorBuilder: (context, error, stackTrace) =>
+                        memCacheWidth: 400,
+                        fadeInDuration: const Duration(milliseconds: 100),
+                        placeholder: (context, url) => Container(
+                          color: Colors.grey.shade100,
+                        ),
+                        errorWidget: (context, url, error) =>
                             const Icon(Icons.broken_image, size: 50),
                       ),
                     ),
