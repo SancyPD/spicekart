@@ -150,7 +150,7 @@ class BrandCategoryScreen extends StatelessWidget {
                     crossAxisCount: 3,
                     crossAxisSpacing: 12,
                     mainAxisSpacing: 16,
-                    childAspectRatio: 0.55,
+                    childAspectRatio: 0.50,
                   ),
                   itemCount: 6,
                   itemBuilder: (context, index) {

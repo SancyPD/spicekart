@@ -1669,6 +1669,8 @@ class ApiService {
   static Future<Map<String, dynamic>> checkout({
     required String paymentMethod,
     String? playerId,
+    bool? allowSubstitution,
+    bool? refundInstead,
   }) async {
     try {
       final url = Uri.parse('$baseUrl/checkout');
@@ -1676,10 +1678,16 @@ class ApiService {
       print('Payment method:$paymentMethod');
 
 
-      final bodyData = {
+      final Map<String, dynamic> bodyData = {
         'payment_method': 'stripe',
       };
 
+      if (allowSubstitution != null) {
+        bodyData['allow_substitution'] = allowSubstitution ? 1 : 0;
+      }
+      if (refundInstead != null) {
+        bodyData['refund_instead'] = refundInstead ? 1 : 0;
+      }
 
       if (playerId != null) {
         bodyData['player_id'] = playerId;

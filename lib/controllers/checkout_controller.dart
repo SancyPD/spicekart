@@ -55,6 +55,19 @@ class CheckoutController extends GetxController {
       : false.obs;
   final isEditMobileVisible = false.obs;
 
+  final allowSubstitutions = true.obs;
+  final refundInsteadOfSubstitution = false.obs;
+
+  void selectAllowSubstitutions() {
+    allowSubstitutions.value = true;
+    refundInsteadOfSubstitution.value = false;
+  }
+
+  void selectRefundInsteadOfSubstitution() {
+    refundInsteadOfSubstitution.value = true;
+    allowSubstitutions.value = false;
+  }
+
   @override
   void onInit() {
     super.onInit();
@@ -478,6 +491,8 @@ class CheckoutController extends GetxController {
     final checkoutResponse = await ApiService.checkout(
       paymentMethod: selectedPaymentMethod.value!,
       playerId: playerId,
+      allowSubstitution: allowSubstitutions.value,
+      refundInstead: refundInsteadOfSubstitution.value,
     );
 
     if (checkoutResponse['status'] != 1) {

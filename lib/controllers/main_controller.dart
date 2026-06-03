@@ -11,6 +11,7 @@ class MainController extends GetxController {
   final currentIndex = 0.obs;
   final tabHistory = <int>[0].obs;
   final categoriesRefreshTick = 0.obs;
+  final usualsRefreshTick = 0.obs;
 
   final List<GlobalKey<NavigatorState>> navigatorKeys = [
     GlobalKey<NavigatorState>(),
@@ -26,6 +27,7 @@ class MainController extends GetxController {
       navigatorKeys[index].currentState?.popUntil((route) => route.isFirst);
       if (index == 0) HomeController.to.refreshData();
       if (index == 1) categoriesRefreshTick.value++;
+      if (index == 3) usualsRefreshTick.value++;
       if (index == 4) CartController.to.triggerRefresh();
       return;
     }
@@ -33,6 +35,7 @@ class MainController extends GetxController {
     currentIndex.value = index;
     if (index == 0) HomeController.to.refreshData();
     if (index == 1) categoriesRefreshTick.value++;
+    if (index == 3) usualsRefreshTick.value++;
     if (index == 4) CartController.to.triggerRefresh();
     
     // Check for theme updates on tab change

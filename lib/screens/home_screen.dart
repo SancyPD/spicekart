@@ -787,7 +787,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   gridDelegate:
                                       const SliverGridDelegateWithFixedCrossAxisCount(
                                         crossAxisCount: 4,
-                                        mainAxisSpacing: 16,
+                                        mainAxisSpacing: 4,
                                         crossAxisSpacing: 16,
                                         childAspectRatio: 0.6,
                                       ),
@@ -1198,7 +1198,7 @@ class _HomeScreenState extends State<HomeScreen> {
             category.categoryName,
             textAlign: TextAlign.start,
             style: TextStyle(
-              fontSize: 12,
+              fontSize: 10.5,
               fontWeight: FontWeight.w500,
               color: isSelected ? AppTheme.instance.secondaryColor : Color(0xFF374338),
             ),

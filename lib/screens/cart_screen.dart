@@ -1337,7 +1337,7 @@ class _CartScreenState extends State<CartScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               itemCount: _usualItems.length,
               itemBuilder: (context, index) {
-                return _buildUsualProductCard(_usualItems[index].item);
+                return _buildUsualProductCard(_usualItems[index]);
               },
             ),
           ),
@@ -1347,7 +1347,9 @@ class _CartScreenState extends State<CartScreen> {
     );
   }
 
-  Widget _buildUsualProductCard(usuals.Item product) {
+  Widget _buildUsualProductCard(usuals.Datum usualItem) {
+    final product = usualItem.item;
+    final isFood = usualItem.itemType == 'food';
     final variant =
         _selectedUsualVariants[product.id] ??
         (product.variants.isNotEmpty ? product.variants.first : null);
@@ -1357,12 +1359,14 @@ class _CartScreenState extends State<CartScreen> {
 
     return GestureDetector(
       onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ProductDetailScreen(productId: product.id),
-          ),
-        );
+        if (!isFood) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ProductDetailScreen(productId: product.id),
+            ),
+          );
+        }
       },
       child: Container(
         width: 140,
@@ -1396,8 +1400,9 @@ class _CartScreenState extends State<CartScreen> {
                     child: Center(
                       child: product.productImage.isNotEmpty
                           ? CachedNetworkImage(
-                              imageUrl:
-                                  'https://spicekart1.mockupz.in/storage/products/${product.productImage}',
+                              imageUrl: isFood
+                                  ? 'https://spicekart1.mockupz.in/storage/food_items/${product.productImage}'
+                                  : 'https://spicekart1.mockupz.in/storage/products/${product.productImage}',
                               fit: BoxFit.contain,
                               memCacheWidth: 85,
                               fadeInDuration: const Duration(milliseconds: 150),
@@ -1418,7 +1423,7 @@ class _CartScreenState extends State<CartScreen> {
                       onTap: () {
                         if (variant == null) return;
                         if (_addingUsualProductIds.contains(product.id)) return;
-                        _addUsualToCart(product, variant);
+                        _addUsualToCart(usualItem, variant);
                       },
                       child: Container(
                         width: 24,
@@ -1485,12 +1490,8 @@ class _CartScreenState extends State<CartScreen> {
             ),
             const SizedBox(height: 4),
             // Variant dropdown-like row
-            GestureDetector(
-              onTap: () => _showUsualVariantPicker(product),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
+            isFood
+                ? Text(
                     weight,
                     style: TextStyle(
                       color: AppTheme.instance.secondaryColor,
@@ -1498,15 +1499,29 @@ class _CartScreenState extends State<CartScreen> {
                       fontWeight: FontWeight.w600,
                       fontFamily: 'ITC Avant Garde Gothic Pro',
                     ),
+                  )
+                : GestureDetector(
+                    onTap: () => _showUsualVariantPicker(product),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          weight,
+                          style: TextStyle(
+                            color: AppTheme.instance.secondaryColor,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            fontFamily: 'ITC Avant Garde Gothic Pro',
+                          ),
+                        ),
+                        Icon(
+                          Icons.keyboard_arrow_down,
+                          size: 16,
+                          color: AppTheme.instance.secondaryColor,
+                        ),
+                      ],
+                    ),
                   ),
-                  Icon(
-                    Icons.keyboard_arrow_down,
-                    size: 16,
-                    color: AppTheme.instance.secondaryColor,
-                  ),
-                ],
-              ),
-            ),
           ],
         ),
       ),
@@ -1514,9 +1529,11 @@ class _CartScreenState extends State<CartScreen> {
   }
 
   Future<void> _addUsualToCart(
-    usuals.Item product,
+    usuals.Datum usualItem,
     usuals.Variant variant,
   ) async {
+    final product = usualItem.item;
+    final isFood = usualItem.itemType == 'food';
     if (!GuestChecker.check(
       action: PendingAction(
         type: PendingActionType.cart,
@@ -1533,11 +1550,19 @@ class _CartScreenState extends State<CartScreen> {
     });
 
     try {
-      final success = await ApiService.addProductToCart(
-        productId: product.id,
-        variantId: variant.id,
-        quantity: 1,
-      );
+      final success = isFood
+          ? await ApiService.addFoodToCart(
+              itemId: product.id,
+              quantity: 1,
+              restaurantId: product.restaurant?.id ?? 0,
+              restaurantName: product.restaurant?.name ?? "",
+              restaurantAddress: product.restaurant?.address ?? "",
+            )
+          : await ApiService.addProductToCart(
+              productId: product.id,
+              variantId: variant.id,
+              quantity: 1,
+            );
       if (success) {
         setState(() => _addingUsualProductIds.remove(product.id));
         await _fetchCartItems(quiet: true);
@@ -1565,6 +1590,7 @@ class _CartScreenState extends State<CartScreen> {
       });
     }
   }
+
 
   void _showUsualVariantPicker(usuals.Item product) {
     if (product.variants.isEmpty) return;

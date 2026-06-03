@@ -89,6 +89,8 @@ class Item {
   List<Rating> ratings;
   List<Image> images;
   bool isFavourite;
+  Restaurant? restaurant;
+  FoodCategory? foodCategory;
 
   Item({
     required this.id,
@@ -111,29 +113,45 @@ class Item {
     required this.ratings,
     required this.images,
     required this.isFavourite,
+    this.restaurant,
+    this.foodCategory,
   });
 
   factory Item.fromJson(Map<String, dynamic> json) => Item(
     id: json["id"] ?? 0,
     slug: json["slug"] ?? "",
-    productName: json["product_name"] ?? "",
-    productDescription: json["product_description"] ?? "",
+    productName: json["product_name"] ?? json["name"] ?? "",
+    productDescription: json["product_description"] ?? json["description"] ?? "",
     productBarcode: json["product_barcode"] ?? "",
     averageRating: json["average_rating"] ?? 0,
     totalRatings: json["total_ratings"] ?? 0,
     categoryId: json["category_id"] ?? 0,
     brandId: json["brand_id"] ?? 0,
-    productImage: json["product_image"] ?? "",
+    productImage: json["product_image"] ?? json["image"] ?? "",
     metaTitle: json["meta_title"],
     metaDescription: json["meta_description"],
     metaKeywords: json["meta_keywords"],
     productTax: json["product_tax"] ?? "",
     productStatus: json["product_status"] ?? "",
-    variants: json["variants"] != null ? List<Variant>.from(json["variants"].map((x) => Variant.fromJson(x))) : [],
+    variants: json["variants"] != null
+        ? List<Variant>.from(json["variants"].map((x) => Variant.fromJson(x)))
+        : (json["price"] != null
+            ? [
+                Variant(
+                  id: 0,
+                  productId: json["id"] ?? 0,
+                  varientSize: "1 Portion",
+                  productPrice: json["price"].toString(),
+                  storePrice: json["price"],
+                )
+              ]
+            : []),
     regions: json["regions"] != null ? List<Region>.from(json["regions"].map((x) => Region.fromJson(x))) : [],
     ratings: json["ratings"] != null ? List<Rating>.from(json["ratings"].map((x) => Rating.fromJson(x))) : [],
     images: json["images"] != null ? List<Image>.from(json["images"].map((x) => Image.fromJson(x))) : [],
     isFavourite: json["is_favourite"] ?? false,
+    restaurant: json["restaurant"] != null ? Restaurant.fromJson(json["restaurant"]) : null,
+    foodCategory: json["food_category"] != null ? FoodCategory.fromJson(json["food_category"]) : null,
   );
 
   Map<String, dynamic> toJson() => {
@@ -157,6 +175,8 @@ class Item {
     "ratings": List<dynamic>.from(ratings.map((x) => x.toJson())),
     "images": List<dynamic>.from(images.map((x) => x.toJson())),
     "is_favourite": isFavourite,
+    "restaurant": restaurant?.toJson(),
+    "food_category": foodCategory?.toJson(),
   };
 }
 
@@ -257,5 +277,65 @@ class Variant {
     "varient_size": varientSize,
     "product_price": productPrice,
     "store_price": storePrice,
+  };
+}
+
+class FoodCategory {
+  int id;
+  String name;
+  bool isActive;
+
+  FoodCategory({
+    required this.id,
+    required this.name,
+    required this.isActive,
+  });
+
+  factory FoodCategory.fromJson(Map<String, dynamic> json) => FoodCategory(
+    id: json["id"] ?? 0,
+    name: json["name"] ?? "",
+    isActive: json["is_active"] ?? false,
+  );
+
+  Map<String, dynamic> toJson() => {
+    "id": id,
+    "name": name,
+    "is_active": isActive,
+  };
+}
+
+class Restaurant {
+  int id;
+  String name;
+  dynamic description;
+  String image;
+  String address;
+  bool isActive;
+
+  Restaurant({
+    required this.id,
+    required this.name,
+    required this.description,
+    required this.image,
+    required this.address,
+    required this.isActive,
+  });
+
+  factory Restaurant.fromJson(Map<String, dynamic> json) => Restaurant(
+    id: json["id"] ?? 0,
+    name: json["name"] ?? "",
+    description: json["description"],
+    image: json["image"] ?? "",
+    address: json["address"] ?? "",
+    isActive: json["is_active"] ?? false,
+  );
+
+  Map<String, dynamic> toJson() => {
+    "id": id,
+    "name": name,
+    "description": description,
+    "image": image,
+    "address": address,
+    "is_active": isActive,
   };
 }

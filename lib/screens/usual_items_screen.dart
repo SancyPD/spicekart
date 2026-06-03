@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:get/get.dart';
+import '../controllers/main_controller.dart';
 import '../utils/app_theme.dart';
 import '../services/api_service.dart';
 import '../model/usuals_response.dart' as usuals;
@@ -28,16 +30,22 @@ class _UsualItemsScreenState extends State<UsualItemsScreen> {
   int _currentPage = 1;
   int _lastPage = 1;
   bool _isLoadingMore = false;
+  Worker? _refreshWorker;
 
   @override
   void initState() {
     super.initState();
     _fetchUsualItems();
     _scrollController.addListener(_onScroll);
+    _refreshWorker = ever<int>(
+      MainController.to.usualsRefreshTick,
+      (_) => _fetchUsualItems(),
+    );
   }
 
   @override
   void dispose() {
+    _refreshWorker?.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -133,11 +141,11 @@ class _UsualItemsScreenState extends State<UsualItemsScreen> {
                             crossAxisCount: 3,
                             crossAxisSpacing: 12,
                             mainAxisSpacing: 16,
-                            childAspectRatio: 0.55,
+                            childAspectRatio: 0.50,
                           ),
                           itemCount: _usualItems.length,
                           itemBuilder: (context, index) {
-                            return _buildProductCard(_usualItems[index].item);
+                            return _buildProductCard(_usualItems[index]);
                           },
                         ),
                       ),
@@ -156,7 +164,9 @@ class _UsualItemsScreenState extends State<UsualItemsScreen> {
     );
   }
 
-  Widget _buildProductCard(usuals.Item product) {
+  Widget _buildProductCard(usuals.Datum usualItem) {
+    final product = usualItem.item;
+    final isFood = usualItem.itemType == 'food';
     final variant = _selectedVariants[product.id] ?? 
                    (product.variants.isNotEmpty ? product.variants.first : null);
     
@@ -165,12 +175,14 @@ class _UsualItemsScreenState extends State<UsualItemsScreen> {
 
     return GestureDetector(
       onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ProductDetailScreen(productId: product.id),
-          ),
-        );
+        if (!isFood) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ProductDetailScreen(productId: product.id),
+            ),
+          );
+        }
       },
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -191,7 +203,9 @@ class _UsualItemsScreenState extends State<UsualItemsScreen> {
                   child: Center(
                     child: product.productImage.isNotEmpty
                         ? CachedNetworkImage(
-                            imageUrl: 'https://spicekart1.mockupz.in/storage/products/${product.productImage}',
+                            imageUrl: isFood
+                                ? 'https://spicekart1.mockupz.in/storage/food_items/${product.productImage}'
+                                : 'https://spicekart1.mockupz.in/storage/products/${product.productImage}',
                             fit: BoxFit.contain,
                             memCacheWidth: 250,
                             fadeInDuration: const Duration(milliseconds: 150),
@@ -224,11 +238,19 @@ class _UsualItemsScreenState extends State<UsualItemsScreen> {
                         _addingProductIds.add(product.id);
                       });
 
-                      final success = await ApiService.addProductToCart(
-                        productId: product.id,
-                        variantId: variant.id,
-                        quantity: 1,
-                      );
+                      final success = isFood
+                          ? await ApiService.addFoodToCart(
+                              itemId: product.id,
+                              quantity: 1,
+                              restaurantId: product.restaurant?.id ?? 0,
+                              restaurantName: product.restaurant?.name ?? "",
+                              restaurantAddress: product.restaurant?.address ?? "",
+                            )
+                          : await ApiService.addProductToCart(
+                              productId: product.id,
+                              variantId: variant.id,
+                              quantity: 1,
+                            );
                       
                       if (!mounted) return;
                       setState(() {
@@ -316,32 +338,42 @@ class _UsualItemsScreenState extends State<UsualItemsScreen> {
             overflow: TextOverflow.ellipsis,
           ),
           const SizedBox(height: 4),
-          GestureDetector(
-            onTap: () => _showVariantPicker(product),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Flexible(
-                  child: Text(
-                    weight,
-                    style: TextStyle(
-                      color: AppTheme.instance.secondaryColor,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      fontFamily: 'ITC Avant Garde Gothic Pro',
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+          isFood
+              ? Text(
+                  weight,
+                  style: TextStyle(
+                    color: AppTheme.instance.secondaryColor,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    fontFamily: 'ITC Avant Garde Gothic Pro',
+                  ),
+                )
+              : GestureDetector(
+                  onTap: () => _showVariantPicker(product),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          weight,
+                          style: TextStyle(
+                            color: AppTheme.instance.secondaryColor,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            fontFamily: 'ITC Avant Garde Gothic Pro',
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      Icon(
+                        Icons.arrow_drop_down,
+                        size: 14,
+                        color: AppTheme.instance.secondaryColor,
+                      ),
+                    ],
                   ),
                 ),
-                Icon(
-                  Icons.arrow_drop_down,
-                  size: 14,
-                  color: AppTheme.instance.secondaryColor,
-                ),
-              ],
-            ),
-          ),
         ],
       ),
     );

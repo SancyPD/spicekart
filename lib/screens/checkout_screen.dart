@@ -228,6 +228,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                               // Cart Items Section
                               _buildCartItemsCard(),
                               const SizedBox(height: 16),
+                              // Substitution Options Section
+                              _buildSubstitutionCard(),
+                              const SizedBox(height: 16),
                               // Wallet Balance Section
                               _buildWalletBalanceCard(),
                               const SizedBox(height: 16),
@@ -353,6 +356,128 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               );
             }),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSubstitutionCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          GestureDetector(
+            onTap: () {
+              controller.selectAllowSubstitutions();
+            },
+            behavior: HitTestBehavior.opaque,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Checkbox(
+                    value: controller.allowSubstitutions.value,
+                    onChanged: (val) {
+                      if (val == true) {
+                        controller.selectAllowSubstitutions();
+                      } else {
+                        controller.selectRefundInsteadOfSubstitution();
+                      }
+                    },
+                    activeColor: AppTheme.instance.secondaryColor,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Allow substitutions for unavailable items',
+                        style: TextStyle(
+                          color: Color(0xFF171717),
+                          fontSize: 14,
+                          fontFamily: 'ITC Avant Garde Gothic Pro',
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        'We may replace unavailable items with similar alternatives of equal or higher value.',
+                        style: TextStyle(
+                          color: Color(0xFF8A8A8F),
+                          fontSize: 12,
+                          height: 1.3,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          GestureDetector(
+            onTap: () {
+              controller.selectRefundInsteadOfSubstitution();
+            },
+            behavior: HitTestBehavior.opaque,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Checkbox(
+                    value: controller.refundInsteadOfSubstitution.value,
+                    onChanged: (val) {
+                      if (val == true) {
+                        controller.selectRefundInsteadOfSubstitution();
+                      } else {
+                        controller.selectAllowSubstitutions();
+                      }
+                    },
+                    activeColor: AppTheme.instance.secondaryColor,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Refund instead of substitution',
+                        style: TextStyle(
+                          color: Color(0xFF171717),
+                          fontSize: 14,
+                          fontFamily: 'ITC Avant Garde Gothic Pro',
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        'If an item is unavailable, please remove it from my order and issue a refund.',
+                        style: TextStyle(
+                          color: Color(0xFF8A8A8F),
+                          fontSize: 12,
+                          height: 1.3,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
